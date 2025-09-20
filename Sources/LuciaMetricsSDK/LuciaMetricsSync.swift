@@ -27,26 +27,22 @@ final class MetricsSyncer {
 	let versionNumber: String
 	let buildNumber: String
 	let appName: String
-	var userFingerprint: String?
+	var userFingerprint: String
 
-	init(versionNumber: String, buildNumber: String, appName: String) {
+	init(versionNumber: String, buildNumber: String, appName: String, fingerprint: String) {
 		self.versionNumber = versionNumber
 		self.buildNumber = buildNumber
 		self.appName = appName
-		self.userFingerprint = UserDefaults.standard.string(forKey: lidKey)
+		self.userFingerprint = fingerprint
 	}
 
 	// Internal storage key
 	private let lidKey = "user_unique_fingerprint_key"
 
-	private func generateUserUniqueFingerprint() -> String {
-		return ""
-	}
-
 	func initializeSDK(baseURLString: String? = nil,
 					   apiKey: String? = nil,
 					   completion: @escaping (String?, Error?) -> Void) {
-		let appInfo: AppInformation = .init(lid: userFingerprint ?? generateUserUniqueFingerprint(), appName: appName, appVersion: versionNumber, appBuild: buildNumber)
+		let appInfo: AppInformation = .init(lid: userFingerprint, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
 		let payloadData = UIApplication.createMetrics(appInfo: appInfo)
 		let payloadBody: InitPayloadBody = .init(user: .init(name: nil, data: .init(redirectHash: "", data: payloadData)), session: nil, utm: nil)
 

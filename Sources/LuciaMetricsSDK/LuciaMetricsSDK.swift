@@ -28,6 +28,7 @@ public extension DeviceMetrics {
 public enum MetricsError: Error {
 	case permissionDenied
 	case networkUnavailable
+	case syncFailed(error: Error)
 	case unknown
 }
 
@@ -36,7 +37,35 @@ public class MetricsCollector {
 	// Singleton for easy access (optional; you could make it non-singleton)
 	nonisolated(unsafe) public static let shared = MetricsCollector()
 
-	private init() {}  // Prevent multiple instances
+	private init() { }
+
+	@MainActor public func captureDeviceFingerprint(versionNumber: String, buildNumber: String, appName: String, completion: @escaping (Result<String, MetricsError>) -> Void) async {
+		self.requestTrackingPermission { granted in
+			if granted {
+				do {
+					Task { @MainActor in
+						let metrics = try MetricsCollector.shared.collectMetrics()
+						print("Collected Metrics: \(metrics)")
+						// Send to your server or log them
+						let fingerprint = metrics.fingerprint
+						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, fingerprint: fingerprint)
+						syncer.initializeSDK { fingerprint, error in
+							if let error = error {
+								let metricsError = MetricsError.syncFailed(error: error)
+								completion(.failure(.syncFailed(error: metricsError)))
+							} else if let lid = fingerprint {
+								completion(.success(lid))
+							} else {
+								completion(.failure(.unknown))
+							}
+						}
+					}
+				}
+			} else {
+				completion(.failure(.permissionDenied))
+			}
+		}
+	}
 
 	// Request tracking permission (required for IDFA on iOS 14+)
 	public func requestTrackingPermission(completion: @escaping (Bool) -> Void) {
@@ -142,4 +171,6 @@ public class MetricsCollector {
 
 		return metrics
 	}
+
+
 }
