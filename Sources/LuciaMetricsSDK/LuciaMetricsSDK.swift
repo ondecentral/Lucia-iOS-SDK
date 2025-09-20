@@ -5,6 +5,25 @@ import UIKit
 import AdSupport  // For IDFA
 import AppTrackingTransparency  // For iOS 14+ tracking permission (import if targeting iOS 14+)
 
+public enum MetricKeys: String {
+	case deviceId = "device_id"
+	case idfv = "idfv"
+	case ipAddress = "ip_address"
+	case deviceModel = "device_model"
+	case osVersion = "os_version"
+}
+
+public typealias DeviceMetrics = [String: String]
+
+public extension DeviceMetrics {
+	var fingerprint: String {
+		let idfv = self[MetricKeys.idfv.rawValue] ?? "unknown"
+		let deviceId = self[MetricKeys.deviceId.rawValue] ?? "unknown"
+		return "\(idfv)-\(deviceId)"
+	}
+}
+
+
 // Enum for potential errors
 public enum MetricsError: Error {
 	case permissionDenied
@@ -104,18 +123,22 @@ public class MetricsCollector {
 	}
 
 	// Example method to collect and return metrics as a dictionary
-	@MainActor public func collectMetrics() throws -> [String: String] {
+	@MainActor public func collectMetrics() throws -> DeviceMetrics {
 		var metrics: [String: String] = [:]
 
 		// Add device ID
-		metrics["device_id"] = try getDeviceIdentifier()
+		metrics[MetricKeys.deviceId.rawValue] = try getDeviceIdentifier()
+
+		// Add IDFV
+		let idfv = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+		metrics[MetricKeys.idfv.rawValue] = idfv
 
 		// Add IP address
-		metrics["ip_address"] = try getIPAddress()
+		metrics[MetricKeys.ipAddress.rawValue] = try getIPAddress()
 
 		// Optional: Add more metrics (e.g., device model)
-		metrics["device_model"] = UIDevice.current.model
-		metrics["os_version"] = UIDevice.current.systemVersion
+		metrics[MetricKeys.deviceModel.rawValue] = UIDevice.current.model
+		metrics[MetricKeys.osVersion.rawValue] = UIDevice.current.systemVersion
 
 		return metrics
 	}
