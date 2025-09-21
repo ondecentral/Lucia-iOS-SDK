@@ -47,7 +47,7 @@ final class MetricsSyncer {
 		let payloadBody: InitPayloadBody = .init(user: .init(name: nil, data: .init(redirectHash: "", data: payloadData)), session: nil, utm: nil)
 
 		// Serialize JSON
-		guard let httpBody = try? JSONSerialization.data(withJSONObject: payloadBody, options: []) else {
+		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {
 			completion(nil, NSError(domain: "JSONError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize JSON"]))
 			return
 		}
