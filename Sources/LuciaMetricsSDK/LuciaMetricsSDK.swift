@@ -25,7 +25,7 @@ public extension DeviceMetrics {
 
 
 // Enum for potential errors
-public enum MetricsError: Error {
+public enum MetricsError: Error, Sendable {
 	case permissionDenied
 	case networkUnavailable
 	case syncFailed(error: Error)
@@ -39,7 +39,7 @@ public class MetricsCollector {
 
 	private init() { }
 
-	@MainActor public func captureDeviceFingerprint(versionNumber: String, buildNumber: String, appName: String, completion: @escaping (Result<String, MetricsError>) -> Void) async {
+	@MainActor public func captureDeviceFingerprint(versionNumber: String, buildNumber: String, appName: String, completion: @escaping @Sendable (Result<String, MetricsError>) -> Void) async {
 		self.requestTrackingPermission { granted in
 			if granted {
 				do {
@@ -68,10 +68,11 @@ public class MetricsCollector {
 	}
 
 	// Request tracking permission (required for IDFA on iOS 14+)
-	public func requestTrackingPermission(completion: @escaping (Bool) -> Void) {
+	func requestTrackingPermission(completion: @escaping @Sendable (Bool) -> Void) {
 		if #available(iOS 14, *) {
 			ATTrackingManager.requestTrackingAuthorization { status in
-				completion(status == .authorized)
+				let isAuthorized: Bool = (status == .authorized)
+				completion(isAuthorized)
 			}
 		} else {
 			completion(true)  // Pre-iOS 14, assume allowed
@@ -95,7 +96,7 @@ public class MetricsCollector {
 	}
 
 	// Get device identifier (alternative to MAC address)
-	@MainActor public func getDeviceIdentifier() throws -> String {
+	@MainActor func getDeviceIdentifier() throws -> String {
 		// Option 1: Vendor Identifier (resets if app is uninstalled)
 		if let vendorID = UIDevice.current.identifierForVendor?.uuidString {
 			return vendorID
@@ -110,7 +111,7 @@ public class MetricsCollector {
 	}
 
 	// Get IP address (IPv4 for the primary interface)
-	public func getIPAddress() throws -> String {
+	func getIPAddress() throws -> String {
 		var address: String?
 		var ifaddr: UnsafeMutablePointer<ifaddrs>?
 

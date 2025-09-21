@@ -41,7 +41,7 @@ final class MetricsSyncer {
 
 	func initializeSDK(baseURLString: String? = nil,
 					   apiKey: String? = nil,
-					   completion: @escaping (String?, Error?) -> Void) {
+					   completion: @escaping @Sendable (String?, Error?) -> Void) {
 		let appInfo: AppInformation = .init(lid: userFingerprint, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
 		let payloadData = UIApplication.createMetrics(appInfo: appInfo)
 		let payloadBody: InitPayloadBody = .init(user: .init(name: nil, data: .init(redirectHash: "", data: payloadData)), session: nil, utm: nil)
