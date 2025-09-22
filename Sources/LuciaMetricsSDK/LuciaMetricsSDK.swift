@@ -39,7 +39,13 @@ public class MetricsCollector {
 
 	private init() { }
 
-	@MainActor public func captureDeviceFingerprint(versionNumber: String, buildNumber: String, appName: String, completion: @escaping @Sendable (Result<String, MetricsError>) -> Void) async {
+	@MainActor public func captureDeviceFingerprint(
+		versionNumber: String,
+		buildNumber: String,
+		appName: String,
+		config: MetricsConfig = MetricsEnvironment.staging.config,
+		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
+	async {
 		self.requestTrackingPermission { granted in
 			if granted {
 				do {
@@ -48,7 +54,7 @@ public class MetricsCollector {
 						print("Collected Metrics: \(metrics)")
 						// Send to your server or log them
 						let fingerprint = metrics.fingerprint
-						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, fingerprint: fingerprint)
+						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, fingerprint: fingerprint, config: config)
 						syncer.initializeSDK { fingerprint, error in
 							if let error = error {
 								let metricsError = MetricsError.syncFailed(error: error)

@@ -18,22 +18,55 @@ import Foundation
 //     }
 // }
 
+public struct MetricsConfig: Sendable {
+	let baseURL: String
+	let apiKey: String
+}
+
+public enum MetricsEnvironment {
+	case test
+	case staging
+	case prod
+
+	public var config: MetricsConfig {
+		switch self {
+		case .test:
+			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+		default:
+			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+		}
+	}
+}
+
 @MainActor
 final class MetricsSyncer {
-
-	private let defaultBaseURL = "https://staging.api.clickinsights.xyz"
-	private let defaultApiKey = "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244"
 
 	let versionNumber: String
 	let buildNumber: String
 	let appName: String
+	let config: MetricsConfig
 	var userFingerprint: String
 
-	init(versionNumber: String, buildNumber: String, appName: String, fingerprint: String) {
+	init(
+		versionNumber: String,
+		buildNumber: String,
+		appName: String,
+		fingerprint: String,
+		config: MetricsConfig = MetricsEnvironment.staging.config
+	) {
 		self.versionNumber = versionNumber
 		self.buildNumber = buildNumber
 		self.appName = appName
 		self.userFingerprint = fingerprint
+		self.config = config
+	}
+
+	private var baseURL: String {
+		config.baseURL
+	}
+
+	private var apiKey: String {
+		config.apiKey
 	}
 
 	// Internal storage key
@@ -53,7 +86,7 @@ final class MetricsSyncer {
 		}
 
 		// URL
-		guard let url = URL(string: defaultBaseURL + "/api/sdk/init") else {
+		guard let url = URL(string: baseURL + "/api/sdk/init") else {
 			completion(nil, NSError(domain: "URLError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
 			return
 		}
@@ -65,7 +98,7 @@ final class MetricsSyncer {
 		request.httpMethod = "POST"
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-		request.setValue(defaultApiKey, forHTTPHeaderField: "X-API-KEY")
+		request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
 		request.setValue("*/*", forHTTPHeaderField: "Accept")
 		request.httpBody = httpBody
 
