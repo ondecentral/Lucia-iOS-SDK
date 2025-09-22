@@ -21,6 +21,11 @@ import Foundation
 public struct MetricsConfig: Sendable {
 	let baseURL: String
 	let apiKey: String
+
+	public init(baseURL: String, apiKey: String) {
+		self.baseURL = baseURL
+		self.apiKey = apiKey
+	}
 }
 
 public enum MetricsEnvironment {
@@ -109,12 +114,21 @@ final class MetricsSyncer {
 				completion(nil, error)
 				return
 			}
-			guard
-				let data = data,
-				let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-				let responseLID = json["lid"] as? String
-			else {
+			guard let data = data else {
+				completion(nil, NSError(domain: "ResponseError", code: 0, userInfo: [NSLocalizedDescriptionKey: "No response data"]))
+				return
+			}
+
+			guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+				print("Data could not be converted to JSON: \(String(describing: String(data: data, encoding: .utf8)))")
 				completion(nil, NSError(domain: "ResponseError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+				return
+			}
+
+			print("JSON response: \(json)")
+
+			guard let responseLID = json["lid"] as? String else {
+				completion(nil, NSError(domain: "ResponseError", code: 0, userInfo: [NSLocalizedDescriptionKey: "No device finger print"]))
 				return
 			}
 
