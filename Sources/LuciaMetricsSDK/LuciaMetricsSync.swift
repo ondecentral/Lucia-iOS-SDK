@@ -22,7 +22,7 @@ import Foundation
 final class MetricsSyncer {
 
 	private let defaultBaseURL = "https://staging.api.clickinsights.xyz"
-	private let defaultApiKey = "05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244"
+	private let defaultApiKey = "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244"
 
 	let versionNumber: String
 	let buildNumber: String
