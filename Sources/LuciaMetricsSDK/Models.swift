@@ -15,6 +15,13 @@ struct MetricsPayload: Codable, @unchecked Sendable {
 	let browserData: BrowserData
 	let user: User
 	let walletData: WalletData
+
+	enum CodingKeys: String, CodingKey {
+		case data, user
+		case walletData = "wallet_data"
+		case browserData = "browser_data"
+		case redirectHash = "redirect_hash"
+	}
 }
 
 // Nested struct for "data"
@@ -83,6 +90,10 @@ struct Timestamp: Codable {}
 // Nested struct for "user"
 struct User: Codable {
 	let userName: String
+
+	enum CodingKeys: String, CodingKey {
+		case userName = "user_name"
+	}
 }
 
 // Empty struct for "wallet_data" (handles empty object {})
