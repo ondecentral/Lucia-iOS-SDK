@@ -12,16 +12,10 @@ import CommonCrypto
 struct MetricsPayload: Codable, @unchecked Sendable {
 	let data: DataObject
 	let redirectHash: String
-	let browserData: BrowserData
+	let session: Session
 	let user: User
 	let walletData: WalletData
-
-	enum CodingKeys: String, CodingKey {
-		case data, user
-		case walletData = "wallet_data"
-		case browserData = "browser_data"
-		case redirectHash = "redirect_hash"
-	}
+	let utm: UTM
 }
 
 // Nested struct for "data"
@@ -37,19 +31,20 @@ struct DataObject: Codable {
 struct Browser: Codable {
 	let applePayAvailable: Bool
 	let colorGamut: [String]  // Assuming strings; adjust if it's another type (e.g., [Int])
-	let encoding: String
 	let language: String
 	let pluginsLength: Int
+	let pluginNames: [String]
 	let timezone: Int
 	let uniqueHash: String
+	let contrastPreference: String
 }
 
 // Nested struct for "data.device"
 struct Device: Codable {
 	let cores: Int
-	let cpuClass: String
 	let memory: Int
 	let touch: Bool
+	let devicePixelRatio: Float
 }
 
 // Empty struct for "data.permissions" (handles empty object {})
@@ -78,26 +73,22 @@ struct Storage: Codable {
 }
 
 // Nested struct for "browser_data"
-struct BrowserData: Codable {
+struct Session: Codable {
 	let hash: String
 	let id: String
-	let timestamp: Timestamp
+	let serverSessionId: String
+	let timestamp: String
 }
-
-// Empty struct for "browser_data.timestamp" (handles empty object {})
-struct Timestamp: Codable {}
 
 // Nested struct for "user"
 struct User: Codable {
-	let userName: String
-
-	enum CodingKeys: String, CodingKey {
-		case userName = "user_name"
-	}
+	let name: String
 }
 
 // Empty struct for "wallet_data" (handles empty object {})
 struct WalletData: Codable {}
+
+struct UTM: Codable {}
 
 
 struct AppInformation: Codable {
@@ -165,22 +156,6 @@ extension UIApplication {
 		return mem
 	}
 
-	private static func getSysctlString(forKey key: String) -> String? {
-		var size = 0
-		sysctlbyname(key, nil, &size, nil, 0)
-		var result = [CChar](repeating: 0, count: size)
-		sysctlbyname(key, &result, &size, nil, 0)
-		return String(cString: result)
-	}
-
-	private static func getCPUName() -> String {
-		let machine = getSysctlString(forKey: "hw.machine") // e.g., "iPhone15,3"
-		let cpuType = getSysctlString(forKey: "hw.cputype") // e.g., "16777228" (raw value for ARM64)
-		let cpuSubtype = getSysctlString(forKey: "hw.cpusubtype")
-
-		return "\(String(describing: cpuType)) \(String(describing: cpuSubtype))"
-	}
-
 	static func createMetrics(appInfo: AppInformation) -> MetricsPayload {
 
 		// Some Constants that will be dynamic in the future
@@ -238,17 +213,21 @@ extension UIApplication {
 		// Color depth
 		let colorDepth = screen.traitCollection.displayGamut == .P3 ? 30 : 24
 
-		let deviceInfo: Device = .init(cores: cores, cpuClass: getCPUName(), memory: memoryGB, touch: touch)
+		// current date
+		let currentDate = Date()
+		let timestamp = currentDate.timeIntervalSince1970
+
+		let deviceInfo: Device = .init(cores: cores, memory: memoryGB, touch: touch, devicePixelRatio: devicePixelRatio)
 		let orientationInfo: Orientation = .init(angle: screenOrientationAngle, type: screenOrientationType)
 		let screenInfo: Screen = .init(availHeight: availHeight, availWidth: availWidth, colorDepth: colorDepth, height: screenHeight, orientation: orientationInfo, width: screenWidth)
 		let permissionInfo: Permissions = .init() // Empty for now
-		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], encoding: "UTF-8", language: language, pluginsLength: 0, timezone: timezoneHours, uniqueHash: uniqueHash)
+		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], language: language, pluginsLength: 0, pluginNames: [], timezone: timezoneHours, uniqueHash: uniqueHash, contrastPreference: "dark")
 		let storageInfo: Storage = .init(indexedDB: false, localStorage: false)
 		let payload: DataObject = .init(browser: browserInfo, device: deviceInfo, permissions: permissionInfo, screen: screenInfo, storage: storageInfo)
-		let browserData: BrowserData = .init(hash: hash, id: appInfo.lid, timestamp: .init())
-		let userInfo: User = .init(userName: userName)
+		let sessionData: Session = .init(hash: hash, id: appInfo.lid, serverSessionId: "", timestamp: String(timestamp))
+		let userInfo: User = .init(name: userName)
 
-		return .init(data: payload, redirectHash: redirectHash, browserData: browserData, user: userInfo, walletData: .init())
+		return .init(data: payload, redirectHash: redirectHash, session: sessionData, user: userInfo, walletData: .init(), utm: .init())
 	}
 }
 
