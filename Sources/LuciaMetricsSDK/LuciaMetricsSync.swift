@@ -9,15 +9,6 @@
 import UIKit
 import Foundation
 
-// Example usage:
-// initializeSDK() { lid, error in
-//     if let lid = lid {
-//         print("Initialized with LID: \(lid)")
-//     } else {
-//         print("Error: \(error?.localizedDescription ?? "Unknown")")
-//     }
-// }
-
 public struct MetricsConfig: Sendable {
 	let baseURL: String
 	let apiKey: String
@@ -81,8 +72,7 @@ final class MetricsSyncer {
 					   apiKey: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
 		let appInfo: AppInformation = .init(lid: userFingerprint, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
-		let payloadData = UIApplication.createMetrics(appInfo: appInfo)
-		let payloadBody: InitPayloadBody = .init(user: .init(name: nil, data: .init(redirectHash: "", data: payloadData)), session: nil, utm: nil)
+		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
 
 		// Serialize JSON
 		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {

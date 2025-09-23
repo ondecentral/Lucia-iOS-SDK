@@ -8,51 +8,92 @@
 import UIKit
 import CommonCrypto
 
+// Top-level struct representing the entire JSON
+struct MetricsPayload: Codable, @unchecked Sendable {
+	let data: DataObject
+	let redirectHash: String
+	let browserData: BrowserData
+	let user: User
+	let walletData: WalletData
+}
+
+// Nested struct for "data"
+struct DataObject: Codable {
+	let browser: Browser
+	let device: Device
+	let permissions: Permissions
+	let screen: Screen
+	let storage: Storage
+}
+
+// Nested struct for "data.browser"
+struct Browser: Codable {
+	let applePayAvailable: Bool
+	let colorGamut: [String]  // Assuming strings; adjust if it's another type (e.g., [Int])
+	let encoding: String
+	let language: String
+	let pluginsLength: Int
+	let timezone: Int
+	let uniqueHash: String
+}
+
+// Nested struct for "data.device"
+struct Device: Codable {
+	let cores: Int
+	let cpuClass: String
+	let memory: Int
+	let touch: Bool
+}
+
+// Empty struct for "data.permissions" (handles empty object {})
+struct Permissions: Codable {}
+
+// Nested struct for "data.screen"
+struct Screen: Codable {
+	let availHeight: Int
+	let availWidth: Int
+	let colorDepth: Int
+	let height: Int
+	let orientation: Orientation
+	let width: Int
+}
+
+// Nested struct for "data.screen.orientation"
+struct Orientation: Codable {
+	let angle: Int
+	let type: String
+}
+
+// Nested struct for "data.storage"
+struct Storage: Codable {
+	let indexedDB: Bool
+	let localStorage: Bool
+}
+
+// Nested struct for "browser_data"
+struct BrowserData: Codable {
+	let hash: String
+	let id: String
+	let timestamp: Timestamp
+}
+
+// Empty struct for "browser_data.timestamp" (handles empty object {})
+struct Timestamp: Codable {}
+
+// Nested struct for "user"
+struct User: Codable {
+	let userName: String
+}
+
+// Empty struct for "wallet_data" (handles empty object {})
+struct WalletData: Codable {}
+
+
 struct AppInformation: Codable {
 	let lid: String
 	let appName: String
 	let appVersion: String
 	let appBuild: String
-}
-
-struct InitPayloadData: Codable, Sendable {
-	let isMetaMaskInstalled: Bool
-	let os: String
-	let touch: Bool
-	let memory: Int
-	let agent: String
-	let cores: Int
-	let language: String
-	let devicePixelRatio: Float
-	let timezone: Int
-	let pluginsLength: Int
-	let pluginNames: [String]
-	let screenWidth: Int
-	let screenheight: Int
-	let availHeight: Int
-	let availWidth: Int
-	let screenOrientationType: String
-	let screenOrientationAngle: Int
-	let uniqueHash: String
-	let colorDepth: Int
-	let indexedDB: [String: AnyCodable]
-	let localStorage: [String: String]
-}
-
-struct InitPayloadUserData: Codable {
-	let redirectHash: String
-	let data: InitPayloadData
-}
-
-struct InitPayloadUser: Codable {
-	let name: String?
-	let data: InitPayloadUserData
-}
-
-struct InitPayloadBody: Codable {
-	let user: InitPayloadUser
-	let session: String?
-	let utm: String?
 }
 
 struct AnyCodable: Codable, @unchecked Sendable {
@@ -113,7 +154,29 @@ extension UIApplication {
 		return mem
 	}
 
-	static func createMetrics(appInfo: AppInformation) -> InitPayloadData {
+	private static func getSysctlString(forKey key: String) -> String? {
+		var size = 0
+		sysctlbyname(key, nil, &size, nil, 0)
+		var result = [CChar](repeating: 0, count: size)
+		sysctlbyname(key, &result, &size, nil, 0)
+		return String(cString: result)
+	}
+
+	private static func getCPUName() -> String {
+		let machine = getSysctlString(forKey: "hw.machine") // e.g., "iPhone15,3"
+		let cpuType = getSysctlString(forKey: "hw.cputype") // e.g., "16777228" (raw value for ARM64)
+		let cpuSubtype = getSysctlString(forKey: "hw.cpusubtype")
+
+		return "\(String(describing: cpuType)) \(String(describing: cpuSubtype))"
+	}
+
+	static func createMetrics(appInfo: AppInformation) -> MetricsPayload {
+
+		// Some Constants that will be dynamic in the future
+		let redirectHash = "iOS_TEST_USER_001_001"
+		let uniqueHash = "iOS_Test_001_001"
+		let userName = "iOSTestUser"
+		let hash = "iOSTest"
 
 		// Gather device info
 		let device = UIDevice.current
@@ -142,10 +205,6 @@ extension UIApplication {
 		let devicePixelRatio = Float(scale)
 		let timezoneHours = TimeZone.current.secondsFromGMT() / 3600
 
-		// Plugins
-		let pluginsLength = 0
-		let pluginNames: [String] = []
-
 		// Screen
 		let screenWidth = Int(round(screen.bounds.width))
 		let screenHeight = Int(round(screen.bounds.height))
@@ -168,34 +227,17 @@ extension UIApplication {
 		// Color depth
 		let colorDepth = screen.traitCollection.displayGamut == .P3 ? 30 : 24
 
-		// Unique hash
-		// What am I supposed to hash ?
-		let hashInput = "\(userAgent)\(osVersion)\(language)\(screenWidth)\(screenHeight)\(memoryGB)\(cores)\(devicePixelRatio)\(timezoneHours)"
-		let uniqueHash = hashInput.sha256Hex() ?? "placeholder_hash"
+		let deviceInfo: Device = .init(cores: cores, cpuClass: getCPUName(), memory: memoryGB, touch: touch)
+		let orientationInfo: Orientation = .init(angle: screenOrientationAngle, type: screenOrientationType)
+		let screenInfo: Screen = .init(availHeight: availHeight, availWidth: availWidth, colorDepth: colorDepth, height: screenHeight, orientation: orientationInfo, width: screenWidth)
+		let permissionInfo: Permissions = .init() // Empty for now
+		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], encoding: "UTF-8", language: language, pluginsLength: 0, timezone: timezoneHours, uniqueHash: uniqueHash)
+		let storageInfo: Storage = .init(indexedDB: false, localStorage: false)
+		let payload: DataObject = .init(browser: browserInfo, device: deviceInfo, permissions: permissionInfo, screen: screenInfo, storage: storageInfo)
+		let browserData: BrowserData = .init(hash: hash, id: appInfo.lid, timestamp: .init())
+		let userInfo: User = .init(userName: userName)
 
-		return .init(
-			isMetaMaskInstalled: false,
-			os: osString,
-			touch: touch,
-			memory: memoryGB,
-			agent: userAgent,
-			cores: cores,
-			language: language,
-			devicePixelRatio: devicePixelRatio,
-			timezone: timezoneHours,
-			pluginsLength: pluginsLength,
-			pluginNames: pluginNames,
-			screenWidth: screenWidth,
-			screenheight: screenHeight,
-			availHeight: availHeight,
-			availWidth: availWidth,
-			screenOrientationType: screenOrientationType,
-			screenOrientationAngle: screenOrientationAngle,
-			uniqueHash: uniqueHash,
-			colorDepth: colorDepth,
-			indexedDB: [:],
-			localStorage: ["lid": appInfo.lid]
-		)
+		return .init(data: payload, redirectHash: redirectHash, browserData: browserData, user: userInfo, walletData: .init())
 	}
 }
 
