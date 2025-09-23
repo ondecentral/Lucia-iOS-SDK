@@ -61,7 +61,7 @@ final class MetricsSyncer {
 		config.baseURL
 	}
 
-	private var apiKey: String {
+	private var configApiKey: String {
 		config.apiKey
 	}
 
@@ -69,7 +69,6 @@ final class MetricsSyncer {
 	private let lidKey = "user_unique_fingerprint_key"
 
 	func initializeSDK(baseURLString: String? = nil,
-					   apiKey: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
 		let appInfo: AppInformation = .init(lid: userFingerprint, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
 		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
@@ -93,7 +92,7 @@ final class MetricsSyncer {
 		request.httpMethod = "POST"
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-		request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+		request.setValue(configApiKey, forHTTPHeaderField: "X-API-KEY")
 		request.setValue("*/*", forHTTPHeaderField: "Accept")
 		request.httpBody = httpBody
 
@@ -130,10 +129,9 @@ final class MetricsSyncer {
 	}
 
 	@available(iOS 15.0, *)
-	func initializeSDK(baseURLString: String? = nil,
-					   apiKey: String? = nil) async throws -> String {
+	func initializeSDK(baseURLString: String? = nil) async throws -> String {
 		try await withCheckedThrowingContinuation { cont in
-			initializeSDK(baseURLString: baseURLString, apiKey: apiKey) { lid, error in
+			initializeSDK(baseURLString: baseURLString) { lid, error in
 				if let error = error {
 					cont.resume(throwing: error)
 				} else if let lid = lid {
