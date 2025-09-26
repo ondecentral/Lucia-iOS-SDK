@@ -94,6 +94,7 @@ struct UTM: Codable {}
 
 struct AppInformation: Codable {
 	let lid: String
+	let userName: String?
 	let appName: String
 	let appVersion: String
 	let appBuild: String
@@ -162,8 +163,7 @@ extension UIApplication {
 		// Some Constants that will be dynamic in the future
 		let redirectHash: String? = nil
 		let uniqueHash: String = appInfo.lid.sha256Hex() ?? ""
-		let userName: String? = nil
-		let hash = "iOSTest"
+		let userName: String? = appInfo.userName
 
 		// Session Id
 		let sessionId = UUID().uuidString
@@ -233,6 +233,43 @@ extension UIApplication {
 		let userInfo: User = .init(name: userName)
 
 		return .init(data: payload, redirectHash: redirectHash, session: sessionData, user: userInfo, walletData: .init(), utm: .init())
+	}
+}
+
+extension UserDefaults {
+	static let appInformationKey = "appInformation"
+
+	/// Saves an AppInformation instance to UserDefaults.
+	/// - Parameter info: The AppInformation struct to save.
+	/// - Returns: True if saving was successful, false otherwise.
+	func saveAppInformation(_ info: AppInformation) -> Bool {
+		do {
+			let encoder = JSONEncoder()
+			let data = try encoder.encode(info)
+			self.set(data, forKey: UserDefaults.appInformationKey)
+			return true
+		} catch {
+			print("Error encoding AppInformation: \(error.localizedDescription)")
+			return false
+		}
+	}
+
+	/// Loads the saved AppInformation from UserDefaults.
+	/// - Returns: The decoded AppInformation, or nil if loading fails (e.g., no data or decoding error).
+	func loadAppInformation() -> AppInformation? {
+		guard let data = self.data(forKey: UserDefaults.appInformationKey) else {
+			print("No AppInformation data found in UserDefaults.")
+			return nil
+		}
+
+		do {
+			let decoder = JSONDecoder()
+			let info = try decoder.decode(AppInformation.self, from: data)
+			return info
+		} catch {
+			print("Error decoding AppInformation: \(error.localizedDescription)")
+			return nil
+		}
 	}
 }
 

@@ -40,6 +40,7 @@ final class MetricsSyncer {
 	let versionNumber: String
 	let buildNumber: String
 	let appName: String
+	let userName: String?
 	let config: MetricsConfig
 	var userFingerprint: String
 
@@ -47,6 +48,7 @@ final class MetricsSyncer {
 		versionNumber: String,
 		buildNumber: String,
 		appName: String,
+		userName: String? = nil,
 		fingerprint: String,
 		config: MetricsConfig = MetricsEnvironment.staging.config
 	) {
@@ -54,6 +56,7 @@ final class MetricsSyncer {
 		self.buildNumber = buildNumber
 		self.appName = appName
 		self.userFingerprint = fingerprint
+		self.userName = userName
 		self.config = config
 	}
 
@@ -70,7 +73,11 @@ final class MetricsSyncer {
 
 	func initializeSDK(baseURLString: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
-		let appInfo: AppInformation = .init(lid: userFingerprint, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
+		// Check for previously saved App Information
+		if let previouslySavedAppInformation = UserDefaults.standard.loadAppInformation() {
+			completion(previouslySavedAppInformation.lid, nil)
+		}
+		let appInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
 		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
 
 		// Serialize JSON
@@ -121,8 +128,8 @@ final class MetricsSyncer {
 				return
 			}
 
-			UserDefaults.standard.set(responseLID, forKey: key)
-			completion(responseLID, nil)
+			// Save for next time 
+			UserDefaults.standard.saveAppInformation(appInfo)
 		}
 		task.resume()
 
