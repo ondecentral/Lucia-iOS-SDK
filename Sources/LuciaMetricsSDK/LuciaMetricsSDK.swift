@@ -43,6 +43,7 @@ public class MetricsCollector {
 		versionNumber: String,
 		buildNumber: String,
 		appName: String,
+		userName: String,
 		config: MetricsConfig = MetricsEnvironment.staging.config,
 		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
 	async {
@@ -54,7 +55,7 @@ public class MetricsCollector {
 						print("Collected Metrics: \(metrics)")
 						// Send to your server or log them
 						let fingerprint = metrics.fingerprint
-						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, fingerprint: fingerprint, config: config)
+						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, userName: userName, fingerprint: fingerprint, config: config)
 						syncer.initializeSDK { fingerprint, error in
 							if let error = error {
 								let metricsError = MetricsError.syncFailed(error: error)
