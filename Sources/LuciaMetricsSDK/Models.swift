@@ -11,7 +11,7 @@ import CommonCrypto
 // Top-level struct representing the entire JSON
 struct MetricsPayload: Codable, @unchecked Sendable {
 	let data: DataObject
-	let redirectHash: String
+	let redirectHash: String?
 	let session: Session
 	let user: User
 	let walletData: WalletData
@@ -35,6 +35,7 @@ struct Browser: Codable {
 	let pluginsLength: Int
 	let pluginNames: [String]
 	let timezone: Int
+	let mobileId: String
 	let uniqueHash: String
 	let contrastPreference: String
 }
@@ -82,7 +83,7 @@ struct Session: Codable {
 
 // Nested struct for "user"
 struct User: Codable {
-	let name: String
+	let name: String?
 }
 
 // Empty struct for "wallet_data" (handles empty object {})
@@ -159,10 +160,14 @@ extension UIApplication {
 	static func createMetrics(appInfo: AppInformation) -> MetricsPayload {
 
 		// Some Constants that will be dynamic in the future
-		let redirectHash = "iOS_TEST_USER_001_001"
-		let uniqueHash = "iOS_Test_001_001"
-		let userName = "iOSTestUser"
+		let redirectHash: String? = nil
+		let uniqueHash: String = appInfo.lid.sha256Hex() ?? ""
+		let userName: String? = nil
 		let hash = "iOSTest"
+
+		// Session Id
+		let sessionId = UUID().uuidString
+		let sessionIdHash = sessionId.sha256Hex() ?? ""
 
 		// Gather device info
 		let device = UIDevice.current
@@ -221,10 +226,10 @@ extension UIApplication {
 		let orientationInfo: Orientation = .init(angle: screenOrientationAngle, type: screenOrientationType)
 		let screenInfo: Screen = .init(availHeight: availHeight, availWidth: availWidth, colorDepth: colorDepth, height: screenHeight, orientation: orientationInfo, width: screenWidth)
 		let permissionInfo: Permissions = .init() // Empty for now
-		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], language: language, pluginsLength: 0, pluginNames: [], timezone: timezoneHours, uniqueHash: uniqueHash, contrastPreference: "dark")
+		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], language: language, pluginsLength: 0, pluginNames: [], timezone: timezoneHours, mobileId: appInfo.lid, uniqueHash: uniqueHash, contrastPreference: "dark")
 		let storageInfo: Storage = .init(indexedDB: false, localStorage: false)
 		let payload: DataObject = .init(browser: browserInfo, device: deviceInfo, permissions: permissionInfo, screen: screenInfo, storage: storageInfo)
-		let sessionData: Session = .init(hash: hash, id: appInfo.lid, serverSessionId: "", timestamp: String(timestamp))
+		let sessionData: Session = .init(hash: sessionIdHash, id: sessionId, serverSessionId: "", timestamp: String(timestamp))
 		let userInfo: User = .init(name: userName)
 
 		return .init(data: payload, redirectHash: redirectHash, session: sessionData, user: userInfo, walletData: .init(), utm: .init())
