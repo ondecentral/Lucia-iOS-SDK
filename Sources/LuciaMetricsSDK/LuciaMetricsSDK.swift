@@ -104,11 +104,6 @@ public class MetricsCollector {
 
 	// Get device identifier (alternative to MAC address)
 	@MainActor func getDeviceIdentifier() throws -> String {
-		// Option 1: Vendor Identifier (resets if app is uninstalled)
-		if let vendorID = UIDevice.current.identifierForVendor?.uuidString {
-			return vendorID
-		}
-
 		// Option 2: Advertising Identifier (IDFA) - requires permission
 		if let ifda = getIDFA() {
 			return ifda
