@@ -220,7 +220,7 @@ extension UIApplication {
 
 		// current date
 		let currentDate = Date()
-		let timestamp = currentDate.timeIntervalSince1970
+		let timestamp = Int64(currentDate.timeIntervalSince1970 * 1000)
 
 		let deviceInfo: Device = .init(cores: cores, memory: memoryGB, touch: touch, devicePixelRatio: devicePixelRatio)
 		let orientationInfo: Orientation = .init(angle: screenOrientationAngle, type: screenOrientationType)

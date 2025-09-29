@@ -100,6 +100,7 @@ final class MetricsSyncer {
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 		request.setValue(configApiKey, forHTTPHeaderField: "X-API-KEY")
+		request.setValue("iOS-1.0.0", forHTTPHeaderField: "sdk-version")
 		request.setValue("*/*", forHTTPHeaderField: "Accept")
 		request.httpBody = httpBody
 
