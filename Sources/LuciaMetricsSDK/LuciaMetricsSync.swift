@@ -76,7 +76,9 @@ final class MetricsSyncer {
 		// Check for previously saved App Information
 		if let previouslySavedAppInformation = UserDefaults.standard.loadAppInformation() {
 			completion(previouslySavedAppInformation.lid, nil)
+			return
 		}
+		
 		let appInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
 		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
 
