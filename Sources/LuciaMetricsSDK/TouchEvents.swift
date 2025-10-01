@@ -12,7 +12,7 @@ import UIKit
 @available(iOS 17, *)
 
 @Model
-public final class LuciaTouchEvent: Codable, Identifiable, Equatable {
+public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked Sendable {
 	public var id: UUID  // Equivalent to auto-generated primary key (use UUID for simplicity in SwiftData)
 
 	// Custom coding keys for JSON serialization (equivalent to @SerializedName)
