@@ -16,6 +16,16 @@ public protocol BackendService {
 	func sendEvents(_ events: [LuciaTouchEvent]) async throws
 }
 
+public final class MockBackendService: BackendService {
+	@available(iOS 17, *)
+	public func sendEvents(_ events: [LuciaTouchEvent]) async throws {
+		for event in events {
+			try await Task.sleep(nanoseconds: 1_000_000_000)
+			print("[MOCK API SERVICE] sending event: \(event.id)")
+		}
+	}
+}
+
 @available(iOS 17, *)
 final public class Batcher: @unchecked Sendable {
 	public enum BatcherError: Error {
@@ -36,8 +46,8 @@ final public class Batcher: @unchecked Sendable {
 
 	public init(
 		backendService: BackendService,
-		maxBatchSize: Int = 50,
-		maxBatchTime: TimeInterval = 30,
+		maxBatchSize: Int = 10,
+		maxBatchTime: TimeInterval = 10,
 		storage: EventStorage = FileEventStorage(),
 		networkMonitor: NetworkMonitor = SystemNetworkMonitor()
 	) {
@@ -280,39 +290,6 @@ public class SystemNetworkMonitor: NetworkMonitor, @unchecked Sendable {
 		monitor.cancel()
 	}
 }
-
-// Usage
-
-// Example usage
-//class ExampleBackendService: BackendService {
-//	func sendEvents(_ events: [TouchEvent]) async throws {
-//		// Implement your backend communication here
-//		print("Sending \(events.count) events to backend")
-//		// Simulate network delay
-//		try await Task.sleep(nanoseconds: 1_000_000_000)
-//	}
-//}
-//
-//// Initialize the batcher
-//let backendService = ExampleBackendService()
-//let batcher = TouchEventBatcher(
-//	backendService: backendService,
-//	maxBatchSize: 25,
-//	maxBatchTime: 15
-//)
-//
-//// Add events
-//let touchEvent = TouchEvent(
-//	type: "tap",
-//	coordinates: CGPoint(x: 100, y: 200),
-//	metadata: ["screen": "main"]
-//)
-//batcher.addEvent(touchEvent)
-//
-//// Manually flush if needed
-//Task {
-//	try? await batcher.flush()
-//}
 
 
 
