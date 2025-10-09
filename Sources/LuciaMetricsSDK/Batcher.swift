@@ -291,6 +291,20 @@ public class SystemNetworkMonitor: NetworkMonitor, @unchecked Sendable {
 	}
 }
 
+@available(iOS 17, *)
+final public class RecordTouchEvents {
+	private init() {}
+
+	private let batcher = Batcher(backendService: MockBackendService())
+
+	nonisolated(unsafe) public static let shared = RecordTouchEvents()
+
+	public func record(_ event: LuciaTouchEvent) {
+		batcher.addEvent(event)
+	}
+
+}
+
 
 
 
