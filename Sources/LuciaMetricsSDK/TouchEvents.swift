@@ -155,3 +155,142 @@ public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked
 	}
 }
 
+extension UIApplication {
+	var keyWindow: UIWindow? {
+		connectedScenes
+			.compactMap { $0 as? UIWindowScene }
+			.flatMap { $0.windows }
+			.first { $0.isKeyWindow }
+	}
+
+	var firstWindow: UIWindow? {
+		connectedScenes
+			.compactMap { $0 as? UIWindowScene }
+			.flatMap { $0.windows }
+			.first
+	}
+}
+
+class LuciaUITapGestureRecognizer: UITapGestureRecognizer {
+	private(set) var capturedTouch: UITouch?
+
+	override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesBegan(touches, with: event)
+		capturedTouch = touches.first
+	}
+
+	override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesEnded(touches, with: event)
+		capturedTouch = touches.first
+	}
+
+	override func reset() {
+		super.reset()
+		capturedTouch = nil
+	}
+}
+
+class LuciaUIFlingGestureRecognizer: UIPanGestureRecognizer {
+	private(set) var capturedTouches: Set<UITouch>?
+	private(set) var firstTouch: UITouch?
+
+	override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesBegan(touches, with: event)
+		capturedTouches = touches
+		firstTouch = touches.first
+	}
+
+	override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesMoved(touches, with: event)
+		capturedTouches = touches
+	}
+
+	override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesEnded(touches, with: event)
+		capturedTouches = touches
+	}
+
+	override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+		super.touchesCancelled(touches, with: event)
+		capturedTouches = nil
+		firstTouch = nil
+	}
+
+	override func reset() {
+		super.reset()
+		capturedTouches = nil
+		firstTouch = nil
+	}
+}
+
+@available(iOS 17, *)
+public extension UIApplication {
+
+	func recordTouches() {
+		addTapGestureRecognizer()
+		addDragGestureRecognizer()
+	}
+
+	private func addTapGestureRecognizer() {
+		guard let window = UIApplication.shared.keyWindow else { return }
+
+		let tapGesture = LuciaUITapGestureRecognizer(target: self, action: #selector(tapAction))
+		tapGesture.requiresExclusiveTouchType = false
+		tapGesture.cancelsTouchesInView = false
+		tapGesture.delegate = self
+		window.addGestureRecognizer(tapGesture)
+	}
+
+	@objc private func tapAction(_ gesture: LuciaUITapGestureRecognizer) {
+		print("[TOUCH] tap captured")
+
+		if let touch = gesture.capturedTouch {
+			let touchData = LuciaTouchEvent.create(touch: touch, in: gesture.view)
+			print("[RECORD] Tap: \(touchData.id)")
+			RecordTouchEvents.shared.record(touchData)
+		}
+	}
+
+	private func addDragGestureRecognizer() {
+		guard let window = UIApplication.shared.keyWindow else { return }
+
+		let panGesture = LuciaUIFlingGestureRecognizer(target: self, action: #selector(dragAction(_:)))
+		panGesture.cancelsTouchesInView = false
+		panGesture.delegate = self
+		window.addGestureRecognizer(panGesture)
+	}
+
+	@objc private func dragAction(_ gesture: LuciaUIFlingGestureRecognizer) {
+		let location = gesture.location(in: gesture.view)
+		let velocity = gesture.velocity(in: gesture.view)
+
+		print("[TOUCH] drag captured")
+
+		switch gesture.state {
+		case .began:
+			print("Drag started at: \(location)")
+		case .changed:
+			print("Dragging to: \(location)")
+		case .ended:
+			print("Drag ended at: \(location) with velocity: \(velocity)")
+		case .cancelled, .failed:
+			print("Drag cancelled")
+		default:
+			break
+		}
+
+		if let firstTouch = gesture.firstTouch {
+			let touchData = LuciaTouchEvent.createFling(touch: firstTouch, in: gesture.view, velocity: velocity)
+			print("[RECORD] Drag: \(touchData.id)")
+			RecordTouchEvents.shared.record(touchData)
+		}
+	}
+
+}
+
+extension UIApplication: @retroactive UIGestureRecognizerDelegate {
+	public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+		return true // set to `false` if you don't want to detect tap during other gestures
+	}
+}
+
