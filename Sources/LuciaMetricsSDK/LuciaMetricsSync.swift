@@ -9,7 +9,7 @@
 import UIKit
 import Foundation
 
-public struct MetricsConfig: Sendable {
+struct MetricsConfig: Sendable {
 	let baseURL: String
 	let apiKey: String
 
@@ -20,16 +20,27 @@ public struct MetricsConfig: Sendable {
 }
 
 public enum MetricsEnvironment {
+	case develop(url: String) // To be removed on production
 	case test
 	case staging
 	case prod
 
-	public var config: MetricsConfig {
+	private var apiKey: String {
+		if let apiKey = Bundle.main.infoDictionary?["LuciaSDKKey"] as? String {
+			return apiKey
+		} else {
+			return ""
+		}
+	}
+
+	var config: MetricsConfig {
 		switch self {
 		case .test:
-			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: apiKey)
+		case .develop(let url):
+			return .init(baseURL: url, apiKey: apiKey)
 		default:
-			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
 		}
 	}
 }
@@ -41,7 +52,7 @@ final class MetricsSyncer {
 	let buildNumber: String
 	let appName: String
 	let userName: String?
-	let config: MetricsConfig
+	private let config: MetricsConfig
 	var userFingerprint: String
 
 	init(
@@ -50,14 +61,14 @@ final class MetricsSyncer {
 		appName: String,
 		userName: String? = nil,
 		fingerprint: String,
-		config: MetricsConfig = MetricsEnvironment.staging.config
+		environment: MetricsEnvironment = MetricsEnvironment.staging
 	) {
 		self.versionNumber = versionNumber
 		self.buildNumber = buildNumber
 		self.appName = appName
 		self.userFingerprint = fingerprint
 		self.userName = userName
-		self.config = config
+		self.config = environment.config
 	}
 
 	private var baseURL: String {
