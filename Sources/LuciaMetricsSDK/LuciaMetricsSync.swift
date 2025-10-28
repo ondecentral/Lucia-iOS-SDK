@@ -93,8 +93,8 @@ final class MetricsSyncer {
 		let payloadInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber, sessionId: "", sessionHash: "")
 		let payloadBody = UIApplication.createMetrics(appInfo: payloadInfo)
 
-		let sessionId = payloadInfo.sessionId
-		let sessionHash = payloadInfo.sessionHash
+		let sessionId = payloadBody.session.serverSessionId
+		let sessionHash = payloadBody.session.hash
 
 		// Serialize JSON
 		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {
@@ -145,12 +145,23 @@ final class MetricsSyncer {
 				return
 			}
 
-			let apiSessionId: String = json["sessionHash"] as? String ?? sessionId
-			let apisessionHash: String = json["sessionHash"] as? String ?? sessionHash
 
-			print("Session: \(apiSessionId) and hash: \(apisessionHash)")
 
-			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apisessionHash)
+			var apiSessionId: String = sessionId
+			var apiSessionHash: String = sessionHash
+
+			if let session = json["session"] as? [String: Any] {
+				if let id = session["id"] as? String {
+					apiSessionId = id
+				}
+				if let hash = session["hash"] as? String {
+					apiSessionHash = hash
+				}
+			}
+
+			print("Session: \(apiSessionId) and hash: \(apiSessionHash)")
+
+			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apiSessionHash)
 
 			// Save for next time 
 			UserDefaults.standard.saveAppInformation(appInfo)
