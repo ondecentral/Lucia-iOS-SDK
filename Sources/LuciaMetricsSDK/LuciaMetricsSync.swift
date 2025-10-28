@@ -89,9 +89,9 @@ final class MetricsSyncer {
 			completion(previouslySavedAppInformation.lid, nil)
 			return
 		}
-		
-		let appInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
-		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
+
+		let payloadInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber, sessionId: "", sessionHash: "")
+		let payloadBody = UIApplication.createMetrics(appInfo: payloadInfo)
 
 		// Serialize JSON
 		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {
@@ -141,6 +141,17 @@ final class MetricsSyncer {
 				completion(nil, NSError(domain: "ResponseError", code: 0, userInfo: [NSLocalizedDescriptionKey: "No device finger print"]))
 				return
 			}
+
+			guard let session = json["session"] as? [String: Any] else {
+				return
+			}
+
+			let sessionID: String = session["id"] as? String ?? ""
+			let sessionHash: String = session["hash"] as? String ?? ""
+
+			print("Session: \(sessionID) and hash: \(sessionHash)")
+
+			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: sessionID, sessionHash: sessionHash)
 
 			// Save for next time 
 			UserDefaults.standard.saveAppInformation(appInfo)
