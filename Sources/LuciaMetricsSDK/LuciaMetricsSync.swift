@@ -93,6 +93,9 @@ final class MetricsSyncer {
 		let payloadInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber, sessionId: "", sessionHash: "")
 		let payloadBody = UIApplication.createMetrics(appInfo: payloadInfo)
 
+		let sessionId = payloadInfo.sessionId
+		let sessionHash = payloadInfo.sessionHash
+
 		// Serialize JSON
 		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {
 			completion(nil, NSError(domain: "JSONError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize JSON"]))
@@ -142,16 +145,12 @@ final class MetricsSyncer {
 				return
 			}
 
-			guard let session = json["session"] as? [String: Any] else {
-				return
-			}
+			let apiSessionId: String = json["sessionHash"] as? String ?? sessionId
+			let apisessionHash: String = json["sessionHash"] as? String ?? sessionHash
 
-			let sessionID: String = session["id"] as? String ?? ""
-			let sessionHash: String = session["hash"] as? String ?? ""
+			print("Session: \(apiSessionId) and hash: \(apisessionHash)")
 
-			print("Session: \(sessionID) and hash: \(sessionHash)")
-
-			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: sessionID, sessionHash: sessionHash)
+			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apisessionHash)
 
 			// Save for next time 
 			UserDefaults.standard.saveAppInformation(appInfo)
