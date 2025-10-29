@@ -124,7 +124,12 @@ final class BackendServiceImpl: BackendService {
 		request.httpBody = jsonData
 
 		// Send the request using URLSession
-		let (_, response) = try await session.data(for: request)
+		let (data, response) = try await session.data(for: request)
+
+		if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+			print("\(json)")
+		}
+
 
 		// Check for successful response (adjust status codes as per your API)
 		guard let httpResponse = response as? HTTPURLResponse,
