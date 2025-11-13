@@ -9,7 +9,7 @@
 import UIKit
 import Foundation
 
-public struct MetricsConfig: Sendable {
+struct MetricsConfig: Sendable {
 	let baseURL: String
 	let apiKey: String
 
@@ -20,16 +20,27 @@ public struct MetricsConfig: Sendable {
 }
 
 public enum MetricsEnvironment {
+	case develop(url: String) // To be removed on production
 	case test
 	case staging
 	case prod
 
-	public var config: MetricsConfig {
+	private var apiKey: String {
+		if let apiKey = Bundle.main.infoDictionary?["LuciaSDKKey"] as? String {
+			return apiKey
+		} else {
+			return ""
+		}
+	}
+
+	var config: MetricsConfig {
 		switch self {
 		case .test:
-			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: apiKey)
+		case .develop(let url):
+			return .init(baseURL: url, apiKey: apiKey)
 		default:
-			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: "d05e2a71-1d5a484a-30698220-65292c18-93cb4d4a-ae634e6b-9d4a5151-08e8a244")
+			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
 		}
 	}
 }
@@ -41,7 +52,7 @@ final class MetricsSyncer {
 	let buildNumber: String
 	let appName: String
 	let userName: String?
-	let config: MetricsConfig
+	private let config: MetricsConfig
 	var userFingerprint: String
 
 	init(
@@ -50,14 +61,14 @@ final class MetricsSyncer {
 		appName: String,
 		userName: String? = nil,
 		fingerprint: String,
-		config: MetricsConfig = MetricsEnvironment.staging.config
+		environment: MetricsEnvironment = MetricsEnvironment.staging
 	) {
 		self.versionNumber = versionNumber
 		self.buildNumber = buildNumber
 		self.appName = appName
 		self.userFingerprint = fingerprint
 		self.userName = userName
-		self.config = config
+		self.config = environment.config
 	}
 
 	private var baseURL: String {
@@ -78,9 +89,12 @@ final class MetricsSyncer {
 			completion(previouslySavedAppInformation.lid, nil)
 			return
 		}
-		
-		let appInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber)
-		let payloadBody = UIApplication.createMetrics(appInfo: appInfo)
+
+		let payloadInfo: AppInformation = .init(lid: userFingerprint, userName: userName, appName: appName, appVersion: versionNumber, appBuild: buildNumber, sessionId: "", sessionHash: "")
+		let payloadBody = UIApplication.createMetrics(appInfo: payloadInfo)
+
+		let sessionId = payloadBody.session.serverSessionId
+		let sessionHash = payloadBody.session.hash
 
 		// Serialize JSON
 		guard let httpBody = try? JSONEncoder().encode(payloadBody) else {
@@ -130,6 +144,24 @@ final class MetricsSyncer {
 				completion(nil, NSError(domain: "ResponseError", code: 0, userInfo: [NSLocalizedDescriptionKey: "No device finger print"]))
 				return
 			}
+
+
+
+			var apiSessionId: String = sessionId
+			var apiSessionHash: String = sessionHash
+
+			if let session = json["session"] as? [String: Any] {
+				if let id = session["id"] as? String {
+					apiSessionId = id
+				}
+				if let hash = session["hash"] as? String {
+					apiSessionHash = hash
+				}
+			}
+
+			print("Session: \(apiSessionId) and hash: \(apiSessionHash)")
+
+			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apiSessionHash)
 
 			// Save for next time 
 			UserDefaults.standard.saveAppInformation(appInfo)

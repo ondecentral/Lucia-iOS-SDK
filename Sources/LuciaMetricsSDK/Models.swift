@@ -98,6 +98,21 @@ struct AppInformation: Codable {
 	let appName: String
 	let appVersion: String
 	let appBuild: String
+	let sessionId: String
+	let sessionHash: String
+}
+
+@available(iOS 17, *)
+extension AppInformation {
+	var luciaSession: APIEvent.APISession {
+		.init(id: sessionId, hash: sessionHash)
+	}
+	var luciaUser: APIEvent.APIUser? {
+		if let username = userName {
+			return .init(name: username)
+		}
+		return nil
+	}
 }
 
 struct AnyCodable: Codable, @unchecked Sendable {

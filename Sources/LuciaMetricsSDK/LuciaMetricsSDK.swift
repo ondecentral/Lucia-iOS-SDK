@@ -32,6 +32,8 @@ public enum MetricsError: Error, Sendable {
 	case unknown
 }
 
+extension MetricsEnvironment: @unchecked Sendable {}
+
 public class MetricsCollector {
 
 	// Singleton for easy access (optional; you could make it non-singleton)
@@ -44,7 +46,7 @@ public class MetricsCollector {
 		buildNumber: String,
 		appName: String,
 		userName: String,
-		config: MetricsConfig = MetricsEnvironment.staging.config,
+		environment: MetricsEnvironment = .staging,
 		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
 	async {
 		self.requestTrackingPermission { granted in
@@ -55,7 +57,7 @@ public class MetricsCollector {
 						print("Collected Metrics: \(metrics)")
 						// Send to your server or log them
 						let fingerprint = metrics.fingerprint
-						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, userName: userName, fingerprint: fingerprint, config: config)
+						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, userName: userName, fingerprint: fingerprint, environment: environment)
 						syncer.initializeSDK { fingerprint, error in
 							if let error = error {
 								let metricsError = MetricsError.syncFailed(error: error)
