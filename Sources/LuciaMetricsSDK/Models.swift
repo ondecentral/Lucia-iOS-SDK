@@ -174,74 +174,57 @@ extension UIApplication {
 	}
 
 	static func createMetrics(appInfo: AppInformation) -> MetricsPayload {
+		// Device attributes (CPU cores, memory, color depth, color gamut, timezone,
+		// language, pixel ratio, orientation) are a fingerprinting surface per
+		// Apple's policy and GDPR Art. 5(1)(c). Only Tier 3 transmits the full
+		// attribute set; Tier 1/2 send zeroed placeholders.
+		let tier = ComplianceManager.shared.tier
+		let sendExtendedAttributes = tier.allowsExtendedDeviceAttributes
 
-		// Some Constants that will be dynamic in the future
 		let redirectHash: String? = nil
 		let uniqueHash: String = appInfo.lid.sha256Hex() ?? ""
 		let userName: String? = appInfo.userName
 
-		// Session Id
 		let sessionId = UUID().uuidString
 		let sessionIdHash = sessionId.sha256Hex() ?? ""
 
-		// Gather device info
 		let device = UIDevice.current
 		let screen = UIScreen.main
 		let processInfo = ProcessInfo.processInfo
 
-		let osName = device.systemName // "iOS"
-		let osVersion = device.systemVersion
-		let model = device.model
-		let locale = Locale.current.identifier
-		let scale = screen.scale
-
-		// User-Agent matching iOS Safari style
-		let userAgent = generateUserAgent(appName: appInfo.appName, appVersion: appInfo.appVersion, buildNumber: appInfo.appBuild)
-
-		// OS string for body
-		let osString = "\(osName) \(osVersion)|\(userAgent)"
 		let touch = true
+		let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
 
-		// Memory in GB
-		let memBytes = sysMemSize() // helper
-		let memoryGB = Int(Double(memBytes) / 1_073_741_824.0)
+		// Computed lazily — only read when the tier allows it.
+		let cores = sendExtendedAttributes ? processInfo.activeProcessorCount : 0
+		let memoryGB = sendExtendedAttributes ? Int(Double(sysMemSize()) / 1_073_741_824.0) : 0
+		let language = sendExtendedAttributes ? (Locale.preferredLanguages.first ?? "en-US") : ""
+		let devicePixelRatio: Float = sendExtendedAttributes ? Float(screen.scale) : 0
+		let timezoneHours = sendExtendedAttributes ? TimeZone.current.secondsFromGMT() / 3600 : 0
+		let colorDepth = sendExtendedAttributes ? (screen.traitCollection.displayGamut == .P3 ? 30 : 24) : 0
 
-		let cores = processInfo.activeProcessorCount
-		let language = Locale.preferredLanguages.first ?? "en-US"
-		let devicePixelRatio = Float(scale)
-		let timezoneHours = TimeZone.current.secondsFromGMT() / 3600
+		let screenWidth = sendExtendedAttributes ? Int(round(screen.bounds.width)) : 0
+		let screenHeight = sendExtendedAttributes ? Int(round(screen.bounds.height)) : 0
 
-		// Screen
-		let screenWidth = Int(round(screen.bounds.width))
-		let screenHeight = Int(round(screen.bounds.height))
-		let availWidth = screenWidth
-		let availHeight = screenHeight
-
-		// Orientation
 		var screenOrientationType = "portrait-primary"
 		var screenOrientationAngle = 0
-		switch device.orientation {
-		case .landscapeLeft, .landscapeRight:
-			screenOrientationType = "landscape-primary"
-			screenOrientationAngle = 90
-		case .portraitUpsideDown:
-			screenOrientationType = "portrait-secondary"
-			screenOrientationAngle = 180
-		default: break
+		if sendExtendedAttributes {
+			switch device.orientation {
+			case .landscapeLeft, .landscapeRight:
+				screenOrientationType = "landscape-primary"
+				screenOrientationAngle = 90
+			case .portraitUpsideDown:
+				screenOrientationType = "portrait-secondary"
+				screenOrientationAngle = 180
+			default: break
+			}
 		}
-
-		// Color depth
-		let colorDepth = screen.traitCollection.displayGamut == .P3 ? 30 : 24
-
-		// current date
-		let currentDate = Date()
-		let timestamp = Int64(currentDate.timeIntervalSince1970 * 1000)
 
 		let deviceInfo: Device = .init(cores: cores, memory: memoryGB, touch: touch, devicePixelRatio: devicePixelRatio)
 		let orientationInfo: Orientation = .init(angle: screenOrientationAngle, type: screenOrientationType)
-		let screenInfo: Screen = .init(availHeight: availHeight, availWidth: availWidth, colorDepth: colorDepth, height: screenHeight, orientation: orientationInfo, width: screenWidth)
-		let permissionInfo: Permissions = .init() // Empty for now
-		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], language: language, pluginsLength: 0, pluginNames: [], timezone: timezoneHours, mobileId: appInfo.lid, uniqueHash: uniqueHash, contrastPreference: "dark")
+		let screenInfo: Screen = .init(availHeight: screenHeight, availWidth: screenWidth, colorDepth: colorDepth, height: screenHeight, orientation: orientationInfo, width: screenWidth)
+		let permissionInfo: Permissions = .init()
+		let browserInfo: Browser = .init(applePayAvailable: false, colorGamut: [], language: language, pluginsLength: 0, pluginNames: [], timezone: timezoneHours, mobileId: appInfo.lid, uniqueHash: uniqueHash, contrastPreference: "")
 		let storageInfo: Storage = .init(indexedDB: false, localStorage: false)
 		let payload: DataObject = .init(browser: browserInfo, device: deviceInfo, permissions: permissionInfo, screen: screenInfo, storage: storageInfo)
 		let sessionData: Session = .init(hash: sessionIdHash, id: sessionId, serverSessionId: "", timestamp: String(timestamp))
@@ -253,10 +236,12 @@ extension UIApplication {
 
 extension UserDefaults {
 	static let appInformationKey = "appInformation"
+	static let baseURLKey = "luciaSDKBaseURL"
 
 	/// Saves an AppInformation instance to UserDefaults.
 	/// - Parameter info: The AppInformation struct to save.
 	/// - Returns: True if saving was successful, false otherwise.
+	@discardableResult
 	func saveAppInformation(_ info: AppInformation) -> Bool {
 		do {
 			let encoder = JSONEncoder()
@@ -285,6 +270,14 @@ extension UserDefaults {
 			print("Error decoding AppInformation: \(error.localizedDescription)")
 			return nil
 		}
+	}
+
+	func saveBaseURL(_ url: String) {
+		self.set(url, forKey: UserDefaults.baseURLKey)
+	}
+
+	func loadBaseURL() -> String? {
+		self.string(forKey: UserDefaults.baseURLKey)
 	}
 }
 

@@ -20,7 +20,7 @@ struct MetricsConfig: Sendable {
 }
 
 public enum MetricsEnvironment {
-	case develop(url: String) // To be removed on production
+	case develop(url: String)
 	case test
 	case staging
 	case prod
@@ -33,14 +33,23 @@ public enum MetricsEnvironment {
 		}
 	}
 
+	/// Reads an override URL from Info.plist under `LuciaSDKTestBaseURL`. Allows per-build test environments
+	/// without hardcoding dev endpoints in the SDK binary.
+	private var testBaseURLFromInfoPlist: String? {
+		Bundle.main.infoDictionary?["LuciaSDKTestBaseURL"] as? String
+	}
+
 	var config: MetricsConfig {
 		switch self {
 		case .test:
-			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: apiKey)
+			let url = testBaseURLFromInfoPlist ?? "https://test.api.clickinsights.xyz"
+			return .init(baseURL: url, apiKey: apiKey)
 		case .develop(let url):
 			return .init(baseURL: url, apiKey: apiKey)
-		default:
+		case .staging:
 			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
+		case .prod:
+			return .init(baseURL: "https://api.clickinsights.xyz", apiKey: apiKey)
 		}
 	}
 }
@@ -84,6 +93,10 @@ final class MetricsSyncer {
 
 	func initializeSDK(baseURLString: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
+		// Persist the configured base URL so the touch-event batcher can reuse it
+		// without relying on hardcoded dev endpoints.
+		UserDefaults.standard.saveBaseURL(baseURLString ?? baseURL)
+
 		// Check for previously saved App Information
 		if let previouslySavedAppInformation = UserDefaults.standard.loadAppInformation() {
 			completion(previouslySavedAppInformation.lid, nil)

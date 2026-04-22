@@ -338,13 +338,18 @@ public class FileEventStorage: EventStorage {
 	private let encoder = JSONEncoder()
 	private let decoder = JSONDecoder()
 
+	/// On-disk suffix for AES-GCM encrypted payloads. Legacy plaintext `.json`
+	/// files written by earlier SDK versions are still decoded on read for a
+	/// single migration window, then rewritten as `.evt` on the next flush.
+	private let encryptedExtension = "evt"
+	private let legacyExtension = "json"
+
 	public init(fileManager: FileManager = .default) {
 		self.fileManager = fileManager
 
 		let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
 		storageDirectory = documentsDirectory.appendingPathComponent("TouchEvents")
 
-		// Create directory if it doesn't exist
 		try? fileManager.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
 	}
 
@@ -354,9 +359,10 @@ public class FileEventStorage: EventStorage {
 
 	public func saveEvents(_ events: [LuciaTouchEvent]) async throws {
 		for event in events {
-			let fileURL = storageDirectory.appendingPathComponent("\(event.id.uuidString).json")
-			let data = try encoder.encode(event)
-			try data.write(to: fileURL)
+			let fileURL = storageDirectory.appendingPathComponent("\(event.id.uuidString).\(encryptedExtension)")
+			let plaintext = try encoder.encode(event)
+			let ciphertext = try EventCipher.encrypt(plaintext)
+			try ciphertext.write(to: fileURL, options: .atomic)
 		}
 	}
 
@@ -364,10 +370,27 @@ public class FileEventStorage: EventStorage {
 		let fileURLs = try fileManager.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil)
 
 		var events: [LuciaTouchEvent] = []
-		for fileURL in fileURLs where fileURL.pathExtension == "json" {
-			let data = try Data(contentsOf: fileURL)
-			let event = try decoder.decode(LuciaTouchEvent.self, from: data)
-			events.append(event)
+		for fileURL in fileURLs {
+			switch fileURL.pathExtension {
+			case encryptedExtension:
+				let ciphertext = try Data(contentsOf: fileURL)
+				let plaintext = try EventCipher.decrypt(ciphertext)
+				let event = try decoder.decode(LuciaTouchEvent.self, from: plaintext)
+				events.append(event)
+			case legacyExtension:
+				// Read legacy plaintext, then re-encrypt so subsequent reads are secure.
+				let data = try Data(contentsOf: fileURL)
+				if let event = try? decoder.decode(LuciaTouchEvent.self, from: data) {
+					events.append(event)
+					let newURL = storageDirectory.appendingPathComponent("\(event.id.uuidString).\(encryptedExtension)")
+					if let ciphertext = try? EventCipher.encrypt(data) {
+						try? ciphertext.write(to: newURL, options: .atomic)
+					}
+					try? fileManager.removeItem(at: fileURL)
+				}
+			default:
+				continue
+			}
 		}
 
 		return events.sorted { $0.timestamp < $1.timestamp }
@@ -375,8 +398,10 @@ public class FileEventStorage: EventStorage {
 
 	public func removeEvents(_ events: [LuciaTouchEvent]) async throws {
 		for event in events {
-			let fileURL = storageDirectory.appendingPathComponent("\(event.id.uuidString).json")
-			try? fileManager.removeItem(at: fileURL)
+			let encrypted = storageDirectory.appendingPathComponent("\(event.id.uuidString).\(encryptedExtension)")
+			try? fileManager.removeItem(at: encrypted)
+			let legacy = storageDirectory.appendingPathComponent("\(event.id.uuidString).\(legacyExtension)")
+			try? fileManager.removeItem(at: legacy)
 		}
 	}
 }
@@ -425,7 +450,11 @@ final public class RecordTouchEvents {
 		guard let appInformation = self.appInformation else { return nil }
 		guard let apiKey = Bundle.main.infoDictionary?["LuciaSDKKey"] as? String else { return nil }
 
-		let baseURL: URL = URL(string: "https://hypsometrical-catabolically-teresita.ngrok-free.dev/")! // hardcoded for now
+		guard let baseURLString = UserDefaults.standard.loadBaseURL(),
+			  let baseURL = URL(string: baseURLString) else {
+			print("[LuciaSDK] Batcher not started — base URL not configured. Call MetricsCollector.captureDeviceFingerprint first.")
+			return nil
+		}
 
 		let service = BackendServiceImpl(baseURL: baseURL, appInformation: appInformation, apiKey: apiKey)
 
@@ -439,6 +468,11 @@ final public class RecordTouchEvents {
 	nonisolated(unsafe) public static let shared = RecordTouchEvents()
 
 	public func record(_ event: LuciaTouchEvent) {
+		// Touch events are Tier 2+ data. Dropping here rather than at the
+		// gesture-recognizer level keeps the public API stable but enforces
+		// data-minimization at the one choke point where events enter storage.
+		guard ComplianceManager.shared.tier.allowsTouchEvents else { return }
+
 		if self.batcher == nil {
 			self.batcher = createBatcher()
 		}
