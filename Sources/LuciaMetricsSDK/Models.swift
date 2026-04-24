@@ -177,9 +177,15 @@ extension UIApplication {
 		// Device attributes (CPU cores, memory, color depth, color gamut, timezone,
 		// language, pixel ratio, orientation) are a fingerprinting surface per
 		// Apple's policy and GDPR Art. 5(1)(c). Only Tier 3 transmits the full
-		// attribute set; Tier 1/2 send zeroed placeholders.
+		// attribute set; Tier 1/2 send zeroed placeholders. Per-field client
+		// overrides can further suppress any attribute within Tier 3.
 		let tier = ComplianceManager.shared.tier
+		let overrides = ComplianceManager.shared.overrides
 		let sendExtendedAttributes = tier.allowsExtendedDeviceAttributes
+
+		func permitted(_ field: String) -> Bool {
+			sendExtendedAttributes && overrides.allows(field)
+		}
 
 		let redirectHash: String? = nil
 		let uniqueHash: String = appInfo.lid.sha256Hex() ?? ""
@@ -195,20 +201,21 @@ extension UIApplication {
 		let touch = true
 		let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
 
-		// Computed lazily — only read when the tier allows it.
-		let cores = sendExtendedAttributes ? processInfo.activeProcessorCount : 0
-		let memoryGB = sendExtendedAttributes ? Int(Double(sysMemSize()) / 1_073_741_824.0) : 0
-		let language = sendExtendedAttributes ? (Locale.preferredLanguages.first ?? "en-US") : ""
-		let devicePixelRatio: Float = sendExtendedAttributes ? Float(screen.scale) : 0
-		let timezoneHours = sendExtendedAttributes ? TimeZone.current.secondsFromGMT() / 3600 : 0
-		let colorDepth = sendExtendedAttributes ? (screen.traitCollection.displayGamut == .P3 ? 30 : 24) : 0
+		let F = DataMinimizationOverrides.Field.self
 
-		let screenWidth = sendExtendedAttributes ? Int(round(screen.bounds.width)) : 0
-		let screenHeight = sendExtendedAttributes ? Int(round(screen.bounds.height)) : 0
+		let cores = permitted(F.cpuCores) ? processInfo.activeProcessorCount : 0
+		let memoryGB = permitted(F.memory) ? Int(Double(sysMemSize()) / 1_073_741_824.0) : 0
+		let language = permitted(F.language) ? (Locale.preferredLanguages.first ?? "en-US") : ""
+		let devicePixelRatio: Float = permitted(F.devicePixelRatio) ? Float(screen.scale) : 0
+		let timezoneHours = permitted(F.timezone) ? TimeZone.current.secondsFromGMT() / 3600 : 0
+		let colorDepth = permitted(F.colorDepth) ? (screen.traitCollection.displayGamut == .P3 ? 30 : 24) : 0
+
+		let screenWidth = permitted(F.screenDimensions) ? Int(round(screen.bounds.width)) : 0
+		let screenHeight = permitted(F.screenDimensions) ? Int(round(screen.bounds.height)) : 0
 
 		var screenOrientationType = "portrait-primary"
 		var screenOrientationAngle = 0
-		if sendExtendedAttributes {
+		if permitted(F.orientation) {
 			switch device.orientation {
 			case .landscapeLeft, .landscapeRight:
 				screenOrientationType = "landscape-primary"

@@ -16,7 +16,14 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "LuciaMetricsSDK"),
+            name: "LuciaMetricsSDK",
+            resources: [
+                // Apple privacy manifest. Declares every data type the SDK
+                // collects and every required-reason API it calls so client
+                // apps' App Store Privacy Nutrition Labels aggregate correctly.
+                .copy("PrivacyInfo.xcprivacy"),
+            ]
+        ),
         .testTarget(
             name: "LuciaMetricsSDKTests",
             dependencies: ["LuciaMetricsSDK"]

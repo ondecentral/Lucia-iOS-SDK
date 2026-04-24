@@ -29,6 +29,7 @@ public enum MetricsError: Error, Sendable {
 	case permissionDenied
 	case networkUnavailable
 	case syncFailed(error: Error)
+	case regionRestricted
 	case unknown
 }
 
@@ -48,9 +49,29 @@ public class MetricsCollector {
 		userName: String,
 		environment: MetricsEnvironment = .staging,
 		tier: DataCollectionTier = .tier1Metrics,
+		regionPolicy: RegionPolicy = .disableInRestrictedRegions,
+		retentionPolicy: RetentionPolicy = .default,
+		overrides: DataMinimizationOverrides = .none,
 		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
 	async {
-		ComplianceManager.shared.setTier(tier)
+		// Configure compliance state before anything else so that every downstream
+		// code path (region check, consent log, collection gating) sees the same
+		// client-declared policy.
+		ComplianceManager.shared.setRegionPolicy(regionPolicy)
+		ComplianceManager.shared.setRetentionPolicy(retentionPolicy)
+		ComplianceManager.shared.setOverrides(overrides)
+
+		// Apply region policy: clamp tier down or disable entirely before we
+		// ever prompt the user or touch the network.
+		let effectiveTier: DataCollectionTier
+		do {
+			effectiveTier = try ComplianceManager.shared.effectiveTier(requested: tier)
+		} catch {
+			completion(.failure(.regionRestricted))
+			return
+		}
+		ComplianceManager.shared.setTier(effectiveTier)
+		let tier = effectiveTier
 
 		self.requestTrackingPermission { granted, attStatusRaw in
 			let attStatus: ConsentReceipt.ATTStatus = MetricsCollector.mapATTStatus(attStatusRaw)
@@ -213,8 +234,10 @@ public class MetricsCollector {
 		let idfv = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
 		metrics[MetricKeys.idfv.rawValue] = idfv
 
-		// IP address is only collected on Tier 3 per GDPR data-minimization.
-		if tier.allowsIPAddress {
+		// IP address is only collected on Tier 3 per GDPR data-minimization, and
+		// only if the client hasn't explicitly excluded it.
+		let overrides = ComplianceManager.shared.overrides
+		if tier.allowsIPAddress && overrides.allows(DataMinimizationOverrides.Field.ipAddress) {
 			metrics[MetricKeys.ipAddress.rawValue] = try getIPAddress()
 		}
 

@@ -177,6 +177,12 @@ final public class Batcher: @unchecked Sendable {
 		self.storage = storage
 		self.networkMonitor = networkMonitor
 
+		// Kick off a retention purge immediately so expired events are evicted
+		// on app launch even if the batcher never otherwise loads pending work.
+		if let fileStorage = storage as? FileEventStorage {
+			fileStorage.purgeExpiredEvents()
+		}
+
 		setupObservers()
 		loadPendingEvents()
 	}
@@ -367,6 +373,11 @@ public class FileEventStorage: EventStorage {
 	}
 
 	public func loadPendingEvents() async throws -> [LuciaTouchEvent] {
+		// Enforce GDPR storage-limitation (Art. 5(1)(e)) before reading anything
+		// back into memory. Files older than the configured retention TTL are
+		// deleted without being re-uploaded.
+		purgeExpiredEvents()
+
 		let fileURLs = try fileManager.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil)
 
 		var events: [LuciaTouchEvent] = []
@@ -402,6 +413,27 @@ public class FileEventStorage: EventStorage {
 			try? fileManager.removeItem(at: encrypted)
 			let legacy = storageDirectory.appendingPathComponent("\(event.id.uuidString).\(legacyExtension)")
 			try? fileManager.removeItem(at: legacy)
+		}
+	}
+
+	/// Deletes any stored event whose file modification date is older than the
+	/// configured `RetentionPolicy.touchEventTTL`. Silent — best-effort.
+	public func purgeExpiredEvents() {
+		let ttl = ComplianceManager.shared.retentionPolicy.touchEventTTL
+		guard ttl > 0 else { return }
+		let cutoff = Date().addingTimeInterval(-ttl)
+		guard let fileURLs = try? fileManager.contentsOfDirectory(
+			at: storageDirectory,
+			includingPropertiesForKeys: [.contentModificationDateKey]
+		) else { return }
+
+		for fileURL in fileURLs {
+			guard fileURL.pathExtension == encryptedExtension
+					|| fileURL.pathExtension == legacyExtension else { continue }
+			let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
+			if let modified = values?.contentModificationDate, modified < cutoff {
+				try? fileManager.removeItem(at: fileURL)
+			}
 		}
 	}
 }

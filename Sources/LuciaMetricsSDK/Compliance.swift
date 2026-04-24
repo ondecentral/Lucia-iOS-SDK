@@ -73,20 +73,153 @@ public struct ConsentReceipt: Codable, Sendable {
 	}
 }
 
+// MARK: - Region Policy
+
+/// Region enforcement strategy. When a user is detected in a restricted
+/// jurisdiction, the SDK will either disable itself entirely or clamp the
+/// active tier down to Tier 1.
+public enum RegionPolicy: String, Codable, Sendable {
+	/// No region gating. Suitable only when the client has full GDPR/CCPA
+	/// compliance infrastructure (DPAs, DPIAs, consent UI) in place.
+	case allowAll
+	/// In EU or California, force Tier 1 regardless of what the client requests.
+	/// Outside those regions, honor the requested tier.
+	case clampToTier1InRestrictedRegions
+	/// In EU or California, disable the SDK entirely and surface an error to
+	/// the client. Default for Phase 1 launch (non-EU, non-California markets).
+	case disableInRestrictedRegions
+}
+
+/// Best-effort on-device region detector. Uses `Locale.current.regionCode` and
+/// `TimeZone.current.identifier` — we intentionally do NOT call any IP
+/// geolocation service to avoid making a network request before consent.
+public enum RegionDetector {
+	/// ISO-3166 country codes for the current EU member states. Checked against
+	/// Locale.current.regionCode which is set from the user's Apple ID region.
+	static let euRegionCodes: Set<String> = [
+		"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE",
+		"GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT",
+		"RO", "SK", "SI", "ES", "SE",
+		// EEA non-EU that are covered by GDPR in practice
+		"IS", "LI", "NO",
+		// UK GDPR (post-Brexit but functionally equivalent)
+		"GB"
+	]
+
+	/// California proxy: region US + Pacific timezone. Not perfect (covers
+	/// Oregon/Washington/Nevada too) but errs on the side of MORE restriction,
+	/// which is the safer failure mode for compliance.
+	static func isLikelyCalifornia() -> Bool {
+		let region = Locale.current.regionCode ?? ""
+		guard region == "US" else { return false }
+		let tz = TimeZone.current.identifier
+		return tz == "America/Los_Angeles"
+	}
+
+	static func isEU() -> Bool {
+		let region = Locale.current.regionCode ?? ""
+		return euRegionCodes.contains(region)
+	}
+
+	public static func isRestrictedRegion() -> Bool {
+		isEU() || isLikelyCalifornia()
+	}
+}
+
+// MARK: - Data Minimization Overrides
+
+/// Per-client overrides that further restrict what a given tier collects.
+/// Fields listed in `excludedFields` are zeroed out even if the active tier
+/// would otherwise allow them. Useful for clients whose DPA or legal review
+/// excludes specific attributes (e.g. timezone, language).
+public struct DataMinimizationOverrides: Codable, Sendable {
+	public let excludedFields: Set<String>
+
+	public init(excludedFields: Set<String> = []) {
+		self.excludedFields = excludedFields
+	}
+
+	public static let none = DataMinimizationOverrides(excludedFields: [])
+
+	public func allows(_ field: String) -> Bool {
+		!excludedFields.contains(field)
+	}
+
+	/// Canonical field names clients can exclude.
+	public enum Field {
+		public static let ipAddress = "ip_address"
+		public static let cpuCores = "cpu_cores"
+		public static let memory = "memory"
+		public static let devicePixelRatio = "device_pixel_ratio"
+		public static let colorDepth = "color_depth"
+		public static let colorGamut = "color_gamut"
+		public static let timezone = "timezone"
+		public static let language = "language"
+		public static let screenDimensions = "screen_dimensions"
+		public static let orientation = "orientation"
+	}
+}
+
+// MARK: - Retention Policy
+
+/// Retention policy for locally persisted touch events and consent receipts.
+/// GDPR Art. 5(1)(e) requires data to be kept no longer than necessary; this
+/// gives clients a single knob to enforce that on-device.
+public struct RetentionPolicy: Codable, Sendable {
+	/// How long touch events may sit on disk before auto-purge. Defaults to 7 days.
+	public let touchEventTTL: TimeInterval
+	/// How long consent receipts are retained. Defaults to 2 years (long enough
+	/// to satisfy demonstrable-consent audits in most jurisdictions).
+	public let consentReceiptTTL: TimeInterval
+
+	public init(
+		touchEventTTL: TimeInterval = 7 * 24 * 60 * 60,
+		consentReceiptTTL: TimeInterval = 2 * 365 * 24 * 60 * 60
+	) {
+		self.touchEventTTL = touchEventTTL
+		self.consentReceiptTTL = consentReceiptTTL
+	}
+
+	public static let `default` = RetentionPolicy()
+}
+
 // MARK: - Compliance Manager
 
-/// Central holder for the active tier and consent receipts. Thread-safe via an
-/// internal lock so the singleton can be read from any actor context.
+/// Errors surfaced by compliance gating (region restrictions, etc.).
+public enum ComplianceError: Error, Sendable {
+	/// SDK is running in a restricted region (EU/California) and the configured
+	/// `RegionPolicy` disables collection there.
+	case regionRestricted
+}
+
+/// Central holder for the active tier, consent receipts, region policy,
+/// retention policy, and minimization overrides. Thread-safe via an internal
+/// lock so the singleton can be read from any actor context.
 public final class ComplianceManager: @unchecked Sendable {
 	public static let shared = ComplianceManager()
 
 	private let lock = NSLock()
 	private var _tier: DataCollectionTier = .tier1Metrics
+	private var _regionPolicy: RegionPolicy = .disableInRestrictedRegions
+	private var _retentionPolicy: RetentionPolicy = .default
+	private var _overrides: DataMinimizationOverrides = .none
 
 	private init() {
 		if let raw = UserDefaults.standard.object(forKey: Keys.tier) as? Int,
 		   let stored = DataCollectionTier(rawValue: raw) {
 			_tier = stored
+		}
+		if let raw = UserDefaults.standard.string(forKey: Keys.regionPolicy),
+		   let stored = RegionPolicy(rawValue: raw) {
+			_regionPolicy = stored
+		}
+		if let data = UserDefaults.standard.data(forKey: Keys.retentionPolicy),
+		   let stored = try? JSONDecoder().decode(RetentionPolicy.self, from: data) {
+			_retentionPolicy = stored
+		}
+		if let data = UserDefaults.standard.data(forKey: Keys.overrides),
+		   let stored = try? JSONDecoder().decode(DataMinimizationOverrides.self, from: data) {
+			_overrides = stored
 		}
 	}
 
@@ -95,18 +228,70 @@ public final class ComplianceManager: @unchecked Sendable {
 		return _tier
 	}
 
+	public var regionPolicy: RegionPolicy {
+		lock.lock(); defer { lock.unlock() }
+		return _regionPolicy
+	}
+
+	public var retentionPolicy: RetentionPolicy {
+		lock.lock(); defer { lock.unlock() }
+		return _retentionPolicy
+	}
+
+	public var overrides: DataMinimizationOverrides {
+		lock.lock(); defer { lock.unlock() }
+		return _overrides
+	}
+
 	/// Set the active collection tier. Persisted across app launches.
 	public func setTier(_ tier: DataCollectionTier) {
 		lock.lock(); _tier = tier; lock.unlock()
 		UserDefaults.standard.set(tier.rawValue, forKey: Keys.tier)
 	}
 
+	public func setRegionPolicy(_ policy: RegionPolicy) {
+		lock.lock(); _regionPolicy = policy; lock.unlock()
+		UserDefaults.standard.set(policy.rawValue, forKey: Keys.regionPolicy)
+	}
+
+	public func setRetentionPolicy(_ policy: RetentionPolicy) {
+		lock.lock(); _retentionPolicy = policy; lock.unlock()
+		if let data = try? JSONEncoder().encode(policy) {
+			UserDefaults.standard.set(data, forKey: Keys.retentionPolicy)
+		}
+	}
+
+	public func setOverrides(_ overrides: DataMinimizationOverrides) {
+		lock.lock(); _overrides = overrides; lock.unlock()
+		if let data = try? JSONEncoder().encode(overrides) {
+			UserDefaults.standard.set(data, forKey: Keys.overrides)
+		}
+	}
+
+	/// Applies the configured region policy. Returns the effective tier the
+	/// SDK should actually use, or throws `ComplianceError.regionRestricted`
+	/// if the policy disables collection entirely.
+	public func effectiveTier(requested: DataCollectionTier) throws -> DataCollectionTier {
+		guard RegionDetector.isRestrictedRegion() else { return requested }
+		switch regionPolicy {
+		case .allowAll:
+			return requested
+		case .clampToTier1InRestrictedRegions:
+			return .tier1Metrics
+		case .disableInRestrictedRegions:
+			throw ComplianceError.regionRestricted
+		}
+	}
+
 	// MARK: Consent Receipts
 
-	/// Persist a consent receipt. Appends to the local audit log and never
-	/// mutates existing entries.
+	/// Persist a consent receipt. Appends to the local audit log, prunes any
+	/// entries older than the configured retention window, and never mutates
+	/// existing non-expired entries.
 	public func recordConsent(_ receipt: ConsentReceipt) {
 		var log = loadConsentLog()
+		let cutoff = Date().addingTimeInterval(-retentionPolicy.consentReceiptTTL)
+		log = log.filter { $0.timestamp >= cutoff }
 		log.append(receipt)
 		saveConsentLog(log)
 	}
@@ -124,6 +309,9 @@ public final class ComplianceManager: @unchecked Sendable {
 	private enum Keys {
 		static let tier = "luciaSDK.dataCollectionTier"
 		static let consentLog = "luciaSDK.consentReceipts"
+		static let regionPolicy = "luciaSDK.regionPolicy"
+		static let retentionPolicy = "luciaSDK.retentionPolicy"
+		static let overrides = "luciaSDK.minimizationOverrides"
 	}
 }
 
