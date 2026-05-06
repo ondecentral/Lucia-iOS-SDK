@@ -160,6 +160,87 @@ public struct DataMinimizationOverrides: Codable, Sendable {
 	}
 }
 
+// MARK: - Rate Limit Policy
+
+/// Hard caps on how many touch events the SDK will accept per session and per
+/// rolling 24-hour window. Protects the backend from a misbehaving or buggy
+/// client (e.g. a stuck gesture loop) and bounds Lucia's per-device cost.
+public struct RateLimitPolicy: Codable, Sendable {
+	/// Maximum events accepted in a single SDK process lifetime. Resets when
+	/// the app launches a new session.
+	public let maxEventsPerSession: Int
+	/// Maximum events accepted in a rolling 24-hour window. Persisted across
+	/// app launches in UserDefaults.
+	public let maxEventsPerDay: Int
+
+	public init(
+		maxEventsPerSession: Int = 10_000,
+		maxEventsPerDay: Int = 100_000
+	) {
+		self.maxEventsPerSession = maxEventsPerSession
+		self.maxEventsPerDay = maxEventsPerDay
+	}
+
+	public static let `default` = RateLimitPolicy()
+
+	/// Disables rate limiting entirely. Only sensible for offline integration
+	/// tests — not recommended in production.
+	public static let unlimited = RateLimitPolicy(
+		maxEventsPerSession: .max,
+		maxEventsPerDay: .max
+	)
+}
+
+/// Token-bucket-style counter that enforces `RateLimitPolicy`. Thread-safe; the
+/// daily window resets automatically when the calendar day rolls over.
+public final class RateLimiter: @unchecked Sendable {
+	public static let shared = RateLimiter()
+
+	private let lock = NSLock()
+	private var sessionCount: Int = 0
+	private var dayCount: Int = 0
+	private var dayBucketStart: Date
+
+	private init() {
+		dayBucketStart = UserDefaults.standard.object(forKey: Keys.bucketStart) as? Date ?? Date()
+		dayCount = UserDefaults.standard.integer(forKey: Keys.dayCount)
+	}
+
+	/// Returns true if another event may be recorded under the active policy,
+	/// and atomically increments the counters when it returns true.
+	public func tryConsume(_ policy: RateLimitPolicy = ComplianceManager.shared.rateLimitPolicy) -> Bool {
+		lock.lock(); defer { lock.unlock() }
+
+		// Roll the daily bucket if 24 hours have passed since it was opened.
+		if Date().timeIntervalSince(dayBucketStart) >= 86_400 {
+			dayBucketStart = Date()
+			dayCount = 0
+			UserDefaults.standard.set(dayBucketStart, forKey: Keys.bucketStart)
+		}
+
+		guard sessionCount < policy.maxEventsPerSession,
+			  dayCount < policy.maxEventsPerDay else {
+			return false
+		}
+
+		sessionCount += 1
+		dayCount += 1
+		UserDefaults.standard.set(dayCount, forKey: Keys.dayCount)
+		return true
+	}
+
+	/// Test seam: resets in-memory counters. Daily-window persistence is
+	/// preserved unless the caller explicitly clears UserDefaults.
+	public func resetSessionCounter() {
+		lock.lock(); sessionCount = 0; lock.unlock()
+	}
+
+	private enum Keys {
+		static let bucketStart = "luciaSDK.rateLimit.bucketStart"
+		static let dayCount = "luciaSDK.rateLimit.dayCount"
+	}
+}
+
 // MARK: - Retention Policy
 
 /// Retention policy for locally persisted touch events and consent receipts.
@@ -203,6 +284,7 @@ public final class ComplianceManager: @unchecked Sendable {
 	private var _regionPolicy: RegionPolicy = .disableInRestrictedRegions
 	private var _retentionPolicy: RetentionPolicy = .default
 	private var _overrides: DataMinimizationOverrides = .none
+	private var _rateLimitPolicy: RateLimitPolicy = .default
 
 	private init() {
 		if let raw = UserDefaults.standard.object(forKey: Keys.tier) as? Int,
@@ -220,6 +302,10 @@ public final class ComplianceManager: @unchecked Sendable {
 		if let data = UserDefaults.standard.data(forKey: Keys.overrides),
 		   let stored = try? JSONDecoder().decode(DataMinimizationOverrides.self, from: data) {
 			_overrides = stored
+		}
+		if let data = UserDefaults.standard.data(forKey: Keys.rateLimitPolicy),
+		   let stored = try? JSONDecoder().decode(RateLimitPolicy.self, from: data) {
+			_rateLimitPolicy = stored
 		}
 	}
 
@@ -241,6 +327,11 @@ public final class ComplianceManager: @unchecked Sendable {
 	public var overrides: DataMinimizationOverrides {
 		lock.lock(); defer { lock.unlock() }
 		return _overrides
+	}
+
+	public var rateLimitPolicy: RateLimitPolicy {
+		lock.lock(); defer { lock.unlock() }
+		return _rateLimitPolicy
 	}
 
 	/// Set the active collection tier. Persisted across app launches.
@@ -265,6 +356,13 @@ public final class ComplianceManager: @unchecked Sendable {
 		lock.lock(); _overrides = overrides; lock.unlock()
 		if let data = try? JSONEncoder().encode(overrides) {
 			UserDefaults.standard.set(data, forKey: Keys.overrides)
+		}
+	}
+
+	public func setRateLimitPolicy(_ policy: RateLimitPolicy) {
+		lock.lock(); _rateLimitPolicy = policy; lock.unlock()
+		if let data = try? JSONEncoder().encode(policy) {
+			UserDefaults.standard.set(data, forKey: Keys.rateLimitPolicy)
 		}
 	}
 
@@ -312,6 +410,7 @@ public final class ComplianceManager: @unchecked Sendable {
 		static let regionPolicy = "luciaSDK.regionPolicy"
 		static let retentionPolicy = "luciaSDK.retentionPolicy"
 		static let overrides = "luciaSDK.minimizationOverrides"
+		static let rateLimitPolicy = "luciaSDK.rateLimitPolicy"
 	}
 }
 

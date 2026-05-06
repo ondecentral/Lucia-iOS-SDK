@@ -52,6 +52,7 @@ public class MetricsCollector {
 		regionPolicy: RegionPolicy = .disableInRestrictedRegions,
 		retentionPolicy: RetentionPolicy = .default,
 		overrides: DataMinimizationOverrides = .none,
+		rateLimitPolicy: RateLimitPolicy = .default,
 		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
 	async {
 		// Configure compliance state before anything else so that every downstream
@@ -60,6 +61,7 @@ public class MetricsCollector {
 		ComplianceManager.shared.setRegionPolicy(regionPolicy)
 		ComplianceManager.shared.setRetentionPolicy(retentionPolicy)
 		ComplianceManager.shared.setOverrides(overrides)
+		ComplianceManager.shared.setRateLimitPolicy(rateLimitPolicy)
 
 		// Apply region policy: clamp tier down or disable entirely before we
 		// ever prompt the user or touch the network.

@@ -82,8 +82,10 @@ final class BackendServiceImpl: BackendService {
 
 	// Initialize with a base URL (e.g., "https://yourapi.com/").
 	// You can make this configurable or inject dependencies as needed.
+	// The default session is pinned via `LuciaURLSessionFactory` so all SDK
+	// traffic benefits from SPKI pinning when the host app declares pins.
 	init(baseURL: URL,
-		 session: URLSession = .shared,
+		 session: URLSession = LuciaURLSessionFactory.makeSession(),
 		 appInformation: AppInformation,
 		 apiKey: String
 	) {
@@ -504,6 +506,10 @@ final public class RecordTouchEvents {
 		// gesture-recognizer level keeps the public API stable but enforces
 		// data-minimization at the one choke point where events enter storage.
 		guard ComplianceManager.shared.tier.allowsTouchEvents else { return }
+
+		// Per-session and per-day caps. A misbehaving client (stuck gesture
+		// loop, runaway retry, etc.) cannot flood the backend.
+		guard RateLimiter.shared.tryConsume() else { return }
 
 		if self.batcher == nil {
 			self.batcher = createBatcher()

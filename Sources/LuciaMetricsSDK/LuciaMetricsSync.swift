@@ -135,7 +135,10 @@ final class MetricsSyncer {
 
 		let key = self.lidKey
 
-		let task = URLSession.shared.dataTask(with: request) { data, response, error in
+		// Use the pinned URLSession so the init call benefits from the same
+		// MITM protection as the touch-event upload path.
+		let session = LuciaURLSessionFactory.makeSession()
+		let task = session.dataTask(with: request) { data, response, error in
 			if let error = error {
 				completion(nil, error)
 				return
