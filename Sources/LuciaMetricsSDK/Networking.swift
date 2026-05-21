@@ -58,9 +58,8 @@ final class CertificatePinningSessionDelegate: NSObject, URLSessionDelegate, @un
 	/// shouldn't be making, but defense in depth) are subject to default trust
 	/// evaluation only.
 	static let pinnedHosts: Set<String> = [
-		"api.clickinsights.xyz",
-		"staging.api.clickinsights.xyz",
-		"test.api.clickinsights.xyz"
+		"api.luciaprotocol.com",
+		"staging.api.luciaprotocol.com"
 	]
 
 	private let pins: Set<String>

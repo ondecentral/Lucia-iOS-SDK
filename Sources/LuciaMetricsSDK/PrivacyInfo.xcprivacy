@@ -20,9 +20,8 @@
 	-->
 	<key>NSPrivacyTrackingDomains</key>
 	<array>
-		<string>api.clickinsights.xyz</string>
-		<string>staging.api.clickinsights.xyz</string>
-		<string>test.api.clickinsights.xyz</string>
+		<string>api.luciaprotocol.com</string>
+		<string>staging.api.luciaprotocol.com</string>
 	</array>
 
 	<!--
