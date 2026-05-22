@@ -20,8 +20,9 @@ struct MetricsConfig: Sendable {
 }
 
 public enum MetricsEnvironment {
+	/// Ad-hoc URL — for pointing the SDK at a local mock server during integration work.
+	/// Not surfaced in client builds.
 	case develop(url: String)
-	case test
 	case staging
 	case prod
 
@@ -33,23 +34,14 @@ public enum MetricsEnvironment {
 		}
 	}
 
-	/// Reads an override URL from Info.plist under `LuciaSDKTestBaseURL`. Allows per-build test environments
-	/// without hardcoding dev endpoints in the SDK binary.
-	private var testBaseURLFromInfoPlist: String? {
-		Bundle.main.infoDictionary?["LuciaSDKTestBaseURL"] as? String
-	}
-
 	var config: MetricsConfig {
 		switch self {
-		case .test:
-			let url = testBaseURLFromInfoPlist ?? "https://test.api.clickinsights.xyz"
-			return .init(baseURL: url, apiKey: apiKey)
 		case .develop(let url):
 			return .init(baseURL: url, apiKey: apiKey)
 		case .staging:
-			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
+			return .init(baseURL: "https://staging.api.luciaprotocol.com", apiKey: apiKey)
 		case .prod:
-			return .init(baseURL: "https://api.clickinsights.xyz", apiKey: apiKey)
+			return .init(baseURL: "https://api.luciaprotocol.com", apiKey: apiKey)
 		}
 	}
 }
@@ -179,8 +171,13 @@ final class MetricsSyncer {
 
 			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apiSessionHash)
 
-			// Save for next time 
+			// Save for next time
 			UserDefaults.standard.saveAppInformation(appInfo)
+
+			// Notify the caller. Without this the success path silently swallowed the
+			// LID and any awaiting completion handler (e.g. MetricsCollector.captureDeviceFingerprint)
+			// hung forever, leaving the host app stuck in a "requesting" state.
+			completion(responseLID, nil)
 		}
 		task.resume()
 
