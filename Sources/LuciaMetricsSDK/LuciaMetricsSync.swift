@@ -39,7 +39,7 @@ public enum MetricsEnvironment {
 		case .develop(let url):
 			return .init(baseURL: url, apiKey: apiKey)
 		case .staging:
-			return .init(baseURL: "https://staging.api.luciaprotocol.com", apiKey: apiKey)
+			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
 		case .prod:
 			return .init(baseURL: "https://api.luciaprotocol.com", apiKey: apiKey)
 		}

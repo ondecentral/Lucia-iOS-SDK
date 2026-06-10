@@ -21,7 +21,7 @@
 	<key>NSPrivacyTrackingDomains</key>
 	<array>
 		<string>api.luciaprotocol.com</string>
-		<string>staging.api.luciaprotocol.com</string>
+		<string>staging.api.clickinsights.xyz</string>
 	</array>
 
 	<!--

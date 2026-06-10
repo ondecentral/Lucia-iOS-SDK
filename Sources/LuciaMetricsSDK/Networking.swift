@@ -59,7 +59,7 @@ final class CertificatePinningSessionDelegate: NSObject, URLSessionDelegate, @un
 	/// evaluation only.
 	static let pinnedHosts: Set<String> = [
 		"api.luciaprotocol.com",
-		"staging.api.luciaprotocol.com"
+		"staging.api.clickinsights.xyz"
 	]
 
 	private let pins: Set<String>
