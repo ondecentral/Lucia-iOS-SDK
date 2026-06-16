@@ -29,6 +29,7 @@ public enum MetricsError: Error, Sendable {
 	case permissionDenied
 	case networkUnavailable
 	case syncFailed(error: Error)
+	case regionRestricted
 	case unknown
 }
 
@@ -47,9 +48,45 @@ public class MetricsCollector {
 		appName: String,
 		userName: String,
 		environment: MetricsEnvironment = .staging,
+		tier: DataCollectionTier = .tier1Metrics,
+		regionPolicy: RegionPolicy = .disableInRestrictedRegions,
+		retentionPolicy: RetentionPolicy = .default,
+		overrides: DataMinimizationOverrides = .none,
+		rateLimitPolicy: RateLimitPolicy = .default,
 		completion: @escaping @Sendable (Result<String, MetricsError>) -> Void)
 	async {
-		self.requestTrackingPermission { granted in
+		// Configure compliance state before anything else so that every downstream
+		// code path (region check, consent log, collection gating) sees the same
+		// client-declared policy.
+		ComplianceManager.shared.setRegionPolicy(regionPolicy)
+		ComplianceManager.shared.setRetentionPolicy(retentionPolicy)
+		ComplianceManager.shared.setOverrides(overrides)
+		ComplianceManager.shared.setRateLimitPolicy(rateLimitPolicy)
+
+		// Apply region policy: clamp tier down or disable entirely before we
+		// ever prompt the user or touch the network.
+		let effectiveTier: DataCollectionTier
+		do {
+			effectiveTier = try ComplianceManager.shared.effectiveTier(requested: tier)
+		} catch {
+			completion(.failure(.regionRestricted))
+			return
+		}
+		ComplianceManager.shared.setTier(effectiveTier)
+		let tier = effectiveTier
+
+		self.requestTrackingPermission { granted, attStatusRaw in
+			let attStatus: ConsentReceipt.ATTStatus = MetricsCollector.mapATTStatus(attStatusRaw)
+			let scope = MetricsCollector.scopeDescription(for: tier)
+			let receipt = ConsentReceipt(
+				tier: tier,
+				attStatus: attStatus,
+				scope: scope,
+				sdkVersion: "1.0.0",
+				appVersion: versionNumber
+			)
+			ComplianceManager.shared.recordConsent(receipt)
+
 			if granted {
 				do {
 					Task { @MainActor in
@@ -76,16 +113,45 @@ public class MetricsCollector {
 		}
 	}
 
+	static func scopeDescription(for tier: DataCollectionTier) -> [String] {
+		switch tier {
+		case .tier1Metrics:
+			return ["device_identifier", "os_version", "app_version"]
+		case .tier2MetricsAndTouch:
+			return ["device_identifier", "os_version", "app_version", "touch_events"]
+		case .tier3Full:
+			return ["device_identifier", "os_version", "app_version", "touch_events",
+				"ip_address", "device_attributes"]
+		}
+	}
+
+	static func mapATTStatus(_ raw: Int) -> ConsentReceipt.ATTStatus {
+		switch raw {
+		case 0: return .notDetermined
+		case 1: return .restricted
+		case 2: return .denied
+		case 3: return .authorized
+		case -1: return .preIOS14
+		default: return .notDetermined
+		}
+	}
+
 	// Request tracking permission (required for IDFA on iOS 14+)
-	func requestTrackingPermission(completion: @escaping @Sendable (Bool) -> Void) {
+	// Reports both a simple granted flag and the raw ATT status for consent logging.
+	func requestTrackingPermission(completion: @escaping @Sendable (Bool, Int) -> Void) {
 		if #available(iOS 14, *) {
 			ATTrackingManager.requestTrackingAuthorization { status in
 				let isAuthorized: Bool = (status == .authorized)
-				completion(isAuthorized)
+				completion(isAuthorized, Int(status.rawValue))
 			}
 		} else {
-			completion(true)  // Pre-iOS 14, assume allowed
+			completion(true, -1)  // Pre-iOS 14, assume allowed
 		}
+	}
+
+	/// Back-compat overload for callers that don't need the raw ATT status.
+	func requestTrackingPermission(completion: @escaping @Sendable (Bool) -> Void) {
+		requestTrackingPermission { granted, _ in completion(granted) }
 	}
 
 	// Get the IDFA
@@ -156,21 +222,28 @@ public class MetricsCollector {
 		return ip
 	}
 
-	// Example method to collect and return metrics as a dictionary
+	// Example method to collect and return metrics as a dictionary.
+	// Respects the active `DataCollectionTier`: Tier 1 collects minimal identifiers,
+	// Tier 3 additionally collects IP address.
 	@MainActor public func collectMetrics() throws -> DeviceMetrics {
 		var metrics: [String: String] = [:]
+		let tier = ComplianceManager.shared.tier
 
-		// Add device ID
+		// Add device ID (always collected — used to maintain a device-scoped profile)
 		metrics[MetricKeys.deviceId.rawValue] = try getDeviceIdentifier()
 
-		// Add IDFV
+		// Add IDFV (always collected)
 		let idfv = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
 		metrics[MetricKeys.idfv.rawValue] = idfv
 
-		// Add IP address
-		metrics[MetricKeys.ipAddress.rawValue] = try getIPAddress()
+		// IP address is only collected on Tier 3 per GDPR data-minimization, and
+		// only if the client hasn't explicitly excluded it.
+		let overrides = ComplianceManager.shared.overrides
+		if tier.allowsIPAddress && overrides.allows(DataMinimizationOverrides.Field.ipAddress) {
+			metrics[MetricKeys.ipAddress.rawValue] = try getIPAddress()
+		}
 
-		// Optional: Add more metrics (e.g., device model)
+		// Coarse device model/OS only.
 		metrics[MetricKeys.deviceModel.rawValue] = UIDevice.current.model
 		metrics[MetricKeys.osVersion.rawValue] = UIDevice.current.systemVersion
 
