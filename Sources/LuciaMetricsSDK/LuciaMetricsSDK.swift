@@ -5,6 +5,14 @@ import UIKit
 import AdSupport  // For IDFA
 import AppTrackingTransparency  // For iOS 14+ tracking permission (import if targeting iOS 14+)
 
+/// Single source of truth for the version this SDK reports to the backend
+/// (`sdk-version` header) and records on every consent receipt. Bump with
+/// each tagged release so the backend can tell SDK builds apart.
+public enum LuciaSDKInfo {
+	public static let version = "2.1.1"
+	static var headerValue: String { "iOS-\(version)" }
+}
+
 public enum MetricKeys: String {
 	case deviceId = "device_id"
 	case idfv = "idfv"
@@ -82,7 +90,7 @@ public class MetricsCollector {
 				tier: tier,
 				attStatus: attStatus,
 				scope: scope,
-				sdkVersion: "1.0.0",
+				sdkVersion: LuciaSDKInfo.version,
 				appVersion: versionNumber
 			)
 			ComplianceManager.shared.recordConsent(receipt)
@@ -97,8 +105,7 @@ public class MetricsCollector {
 						let syncer = MetricsSyncer(versionNumber: versionNumber, buildNumber: buildNumber, appName: appName, userName: userName, fingerprint: fingerprint, environment: environment)
 						syncer.initializeSDK { fingerprint, error in
 							if let error = error {
-								let metricsError = MetricsError.syncFailed(error: error)
-								completion(.failure(.syncFailed(error: metricsError)))
+								completion(.failure(.syncFailed(error: error)))
 							} else if let lid = fingerprint {
 								completion(.success(lid))
 							} else {

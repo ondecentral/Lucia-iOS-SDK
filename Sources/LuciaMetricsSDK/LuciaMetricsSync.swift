@@ -80,9 +80,6 @@ final class MetricsSyncer {
 		config.apiKey
 	}
 
-	// Internal storage key
-	private let lidKey = "user_unique_fingerprint_key"
-
 	func initializeSDK(baseURLString: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
 		// Persist the configured base URL so the touch-event batcher can reuse it
@@ -121,11 +118,9 @@ final class MetricsSyncer {
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 		request.setValue(configApiKey, forHTTPHeaderField: "X-API-KEY")
-		request.setValue("iOS-1.0.0", forHTTPHeaderField: "sdk-version")
+		request.setValue(LuciaSDKInfo.headerValue, forHTTPHeaderField: "sdk-version")
 		request.setValue("*/*", forHTTPHeaderField: "Accept")
 		request.httpBody = httpBody
-
-		let key = self.lidKey
 
 		// Use the pinned URLSession so the init call benefits from the same
 		// MITM protection as the touch-event upload path.
@@ -133,6 +128,12 @@ final class MetricsSyncer {
 		let task = session.dataTask(with: request) { data, response, error in
 			if let error = error {
 				completion(nil, error)
+				return
+			}
+			// Treat non-2xx as failure (mirrors BackendServiceImpl) rather than
+			// trusting whatever JSON body an error response happens to carry.
+			if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+				completion(nil, NSError(domain: "ResponseError", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode) from /api/sdk/init"]))
 				return
 			}
 			guard let data = data else {

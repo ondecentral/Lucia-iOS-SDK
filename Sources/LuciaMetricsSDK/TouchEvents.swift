@@ -32,7 +32,7 @@ public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked
 	}
 
 	private(set) public var sessionID: String?
-	private(set) public var timestamp: Double  // TimeInterval (seconds since boot; adapt if needed)
+	private(set) public var timestamp: Double  // Unix epoch milliseconds (see epochMilliseconds(for:))
 	private(set) public var type: String
 	private(set) public var rawX: Float
 	private(set) public var rawY: Float
@@ -106,12 +106,21 @@ public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked
 	}
 
 	// Static factory methods (equivalent to companion object)
+	/// `UITouch.timestamp` is seconds since boot — it resets on reboot and means
+	/// nothing to the backend. Convert to Unix epoch milliseconds at capture time
+	/// so persisted events survive a reboot and match the init payload's
+	/// `session.timestamp` convention.
+	@MainActor static func epochMilliseconds(for touch: UITouch) -> Double {
+		let bootEpoch = Date().timeIntervalSince1970 - ProcessInfo.processInfo.systemUptime
+		return (bootEpoch + touch.timestamp) * 1000
+	}
+
 	@MainActor public static func create(touch: UITouch, in view: UIView?) -> LuciaTouchEvent {
 		let location = touch.location(in: view)  // Compute raw position in view coordinates
 		// TODO: pass in sessionID
 		return LuciaTouchEvent(
 			sessionID: "",
-			timestamp: touch.timestamp,  // Seconds since boot; convert to ms since 1970 if needed: Date().timeIntervalSince1970 * 1000
+			timestamp: epochMilliseconds(for: touch),
 			type: "touch",
 			rawX: Float(location.x),
 			rawY: Float(location.y),
@@ -125,7 +134,7 @@ public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked
 		// TODO: pass in sessionID
 		return LuciaTouchEvent(
 			sessionID: "",
-			timestamp: touch.timestamp,
+			timestamp: epochMilliseconds(for: touch),
 			type: "fling",
 			rawX: Float(location.x),
 			rawY: Float(location.y),
@@ -143,7 +152,7 @@ public final class LuciaTouchEvent: Codable, Identifiable, Equatable, @unchecked
 		// TODO: pass in sessionID
 		return LuciaTouchEvent(
 			sessionID: "",
-			timestamp: touch.timestamp,
+			timestamp: epochMilliseconds(for: touch),
 			type: "scroll/drag",
 			rawX: Float(location.x),
 			rawY: Float(location.y),

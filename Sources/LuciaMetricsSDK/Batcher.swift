@@ -108,7 +108,7 @@ final class BackendServiceImpl: BackendService {
 		let jsonData = try encoder.encode(payload)
 
 		// Construct the URL for the endpoint
-		var urlComponents = URLComponents(url: baseURL.appendingPathComponent("api/sdk/motion/batch"), resolvingAgainstBaseURL: true)
+		let urlComponents = URLComponents(url: baseURL.appendingPathComponent("api/sdk/motion/batch"), resolvingAgainstBaseURL: true)
 		guard let url = urlComponents?.url else {
 			throw URLError(.badURL)
 		}
@@ -121,7 +121,7 @@ final class BackendServiceImpl: BackendService {
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 		request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
-		request.setValue("iOS-1.0.0", forHTTPHeaderField: "sdk-version")
+		request.setValue(LuciaSDKInfo.headerValue, forHTTPHeaderField: "sdk-version")
 		request.setValue("*/*", forHTTPHeaderField: "Accept")
 		request.httpBody = jsonData
 
