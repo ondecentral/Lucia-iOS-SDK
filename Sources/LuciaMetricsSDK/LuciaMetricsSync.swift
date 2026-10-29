@@ -20,8 +20,9 @@ struct MetricsConfig: Sendable {
 }
 
 public enum MetricsEnvironment {
-	case develop(url: String) // To be removed on production
-	case test
+	/// Ad-hoc URL — for pointing the SDK at a local mock server during integration work.
+	/// Not surfaced in client builds.
+	case develop(url: String)
 	case staging
 	case prod
 
@@ -35,12 +36,12 @@ public enum MetricsEnvironment {
 
 	var config: MetricsConfig {
 		switch self {
-		case .test:
-			return .init(baseURL: "https://33e5e8c63065.ngrok-free.app", apiKey: apiKey)
 		case .develop(let url):
 			return .init(baseURL: url, apiKey: apiKey)
-		default:
+		case .staging:
 			return .init(baseURL: "https://staging.api.clickinsights.xyz", apiKey: apiKey)
+		case .prod:
+			return .init(baseURL: "https://api.luciaprotocol.com", apiKey: apiKey)
 		}
 	}
 }
@@ -84,6 +85,10 @@ final class MetricsSyncer {
 
 	func initializeSDK(baseURLString: String? = nil,
 					   completion: @escaping @Sendable (String?, Error?) -> Void) {
+		// Persist the configured base URL so the touch-event batcher can reuse it
+		// without relying on hardcoded dev endpoints.
+		UserDefaults.standard.saveBaseURL(baseURLString ?? baseURL)
+
 		// Check for previously saved App Information
 		if let previouslySavedAppInformation = UserDefaults.standard.loadAppInformation() {
 			completion(previouslySavedAppInformation.lid, nil)
@@ -122,7 +127,10 @@ final class MetricsSyncer {
 
 		let key = self.lidKey
 
-		let task = URLSession.shared.dataTask(with: request) { data, response, error in
+		// Use the pinned URLSession so the init call benefits from the same
+		// MITM protection as the touch-event upload path.
+		let session = LuciaURLSessionFactory.makeSession()
+		let task = session.dataTask(with: request) { data, response, error in
 			if let error = error {
 				completion(nil, error)
 				return
@@ -163,8 +171,13 @@ final class MetricsSyncer {
 
 			let appInfo: AppInformation = .init(lid: responseLID, userName: self.userName, appName: self.appName, appVersion: self.versionNumber, appBuild: self.buildNumber, sessionId: apiSessionId, sessionHash: apiSessionHash)
 
-			// Save for next time 
+			// Save for next time
 			UserDefaults.standard.saveAppInformation(appInfo)
+
+			// Notify the caller. Without this the success path silently swallowed the
+			// LID and any awaiting completion handler (e.g. MetricsCollector.captureDeviceFingerprint)
+			// hung forever, leaving the host app stuck in a "requesting" state.
+			completion(responseLID, nil)
 		}
 		task.resume()
 
